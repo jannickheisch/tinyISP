@@ -19,8 +19,16 @@ else:
 b64 = lambda b: base64.b64encode(b).decode()
 
 DATA_FOLDER = './data/'
+FID_LEN = 32
+HASH_LEN = 20
+TINYSSB_PKT_LEN = 120
+DMX_LEN = 7
+DMX_PFX = b"tinyssb-v0"
 
-def byteArrayCmp(a: bytearray, b: bytearray) -> int:
+PKTTYPE_plain48 = 0
+PKTTYPE_chain20 = 1
+
+def byteArrayCmp(a: bytes, b: bytes) -> int:
     for i in range(len(a)):
         d = (a[i] & 0xFF) - (b[i] & 0xFF)
         if d != 0:
@@ -61,6 +69,9 @@ def json_pp(d, indent=''):
         return jsonstr
     return stringify(d)
 
+def int_to_bytes(val: int) -> bytes:
+    return val.to_bytes((val.bit_length() + 7) // 8, "big")
+
 # select.poll() implementation compatible with Windows
 # This implementation is limited to select.POLLIN and select.POLLOUT and works only for sockets not file descriptors.
 class Poll:
@@ -84,7 +95,10 @@ class Poll:
         readlist = [socket for socket, eventmask in self.sockets.items() if eventmask & self.POLLIN]
         writelist = [socket for socket, eventmask in self.sockets.items() if eventmask & self.POLLOUT]
 
-        rlist, wlist, _ = select.select(readlist, writelist, [], timeout/1000)
+        if timeout is not None:
+            timeout /= 1000
+
+        rlist, wlist, _ = select.select(readlist, writelist, [], timeout)
 
         events = []
 

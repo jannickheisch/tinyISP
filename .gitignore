@@ -160,4 +160,4 @@ cython_debug/
 #.idea/
 
 # tinyssb data folder
-tinyssb/data
+python/data

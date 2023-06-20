@@ -23,7 +23,7 @@ FID_LEN = 32
 HASH_LEN = 20
 TINYSSB_PKT_LEN = 120
 DMX_LEN = 7
-DMX_PFX = b"tinyssb-v0"
+DMX_PFX = "tinyssb-v0".encode('utf-8')
 
 PKTTYPE_plain48 = 0
 PKTTYPE_chain20 = 1

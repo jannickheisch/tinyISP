@@ -51,7 +51,7 @@ class Chunk:
 
 class NODE:  # a node in the tinySSB forwarding fabric
 
-    def __init__(self, faces: list[Type[io.FACE]], keystore: Keystore, me: bytes, callback: Optional[Callable[[bytes], None]] = None):
+    def __init__(self, faces: list[Type[io.FACE]], keystore: Keystore, me: bytes, callback: Optional[Callable[[repo.LogTinyEntry], None]] = None):
         from . import goset
         self.faces = faces
         self.ks = keystore
@@ -72,7 +72,7 @@ class NODE:  # a node in the tinySSB forwarding fabric
         self.log_offs = 0
         self.callback= callback
         
-    def on_tiny_event(self, tiny_event) -> None:
+    def on_tiny_event(self, tiny_event: repo.LogTinyEntry) -> None:
         print("received:", tiny_event)
         if self.callback is not None:
             self.callback(tiny_event)

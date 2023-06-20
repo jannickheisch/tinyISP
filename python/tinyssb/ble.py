@@ -60,7 +60,7 @@ class GATT_SERVER:
 
 
 # auxiliary class for easier management of client connections
-class Client():
+class Client:
     def __init__(self, queueSet, clientSet, address) -> None:
         self.queueSet = queueSet
         self.clientSet = clientSet

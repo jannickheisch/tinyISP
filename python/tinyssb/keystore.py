@@ -8,6 +8,14 @@ import bipf
 import pure25519
 from . import util
 
+# from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey, Ed25519PrivateKey
+# from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
+
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import dh
+
+
 # ----------------------------------------------------------------------
 
 class Keystore:
@@ -87,4 +95,43 @@ def mkverifyfct(secret):
         return False
     return vfct
 
-# eof
+def diffie_hellmann():
+    parameters = dh.generate_parameters(2, 512)
+
+    print(parameters.parameter_numbers().p, parameters.parameter_numbers().g)
+
+# def ed25519_shared_secret(private_key, public_key):
+#     # Convert the private and public keys to integers
+#     private_key_int = pure25519.bytes_to_clamped_scalar(private_key)
+#     public_point = pure25519.basic.decodepoint(public_key)
+
+#     x, _ = pure25519.basic.xform_extended_to_affine(pure25519.basic.scalarmult_element_safe_slow(pure25519.basic.xform_affine_to_extended(public_point), private_key_int))
+
+#     return pure25519.scalar_to_bytes(x)
+
+#     #public_key_int = int.from_bytes(public_key, byteorder='little')
+
+#     # Perform scalar multiplication using the private and public keys
+#     #shared_secret_int = private_key_int * public_key_int
+
+#     # Convert the shared secret back to bytes
+#     #shared_secret = shared_secret_int.to_bytes(32, byteorder='little')
+#     #return shared_secret
+
+# def test():
+#     tmp1, _ = pure25519.create_keypair()
+#     tmp2, _ = pure25519.create_keypair()
+#     priv1, pub1 = tmp1.sk_s[:32], tmp1.vk_s
+#     priv2, pub2 = tmp2.sk_s[:32], tmp2.vk_s
+
+
+#     private1 = X25519PrivateKey.from_private_bytes(Ed25519PrivateKey.from_private_bytes(priv1).private_bytes_raw())
+#     public1 = X25519PublicKey.from_public_bytes(Ed25519PublicKey.from_public_bytes(pub1).public_bytes_raw())
+#     private2 = X25519PrivateKey.from_private_bytes(Ed25519PrivateKey.from_private_bytes(priv2).private_bytes_raw())
+#     public2 = X25519PublicKey.from_public_bytes(Ed25519PublicKey.from_public_bytes(pub2).public_bytes_raw())
+
+#     share1 = private1.exchange(public2)
+#     share2 = private2.exchange(public1)
+
+#     print(share1 == share2)
+# # eof

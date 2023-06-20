@@ -12,7 +12,7 @@ import bipf
 
 
 GOSET_DMX_STR = "tinySSB-0.1 GOset 1"
-DMX_PFX = "tinyssb-v0".encode('utf-8')
+DMX_PFX = b"tinyssb-v0"
 
 
 class Claim:
@@ -51,16 +51,17 @@ ZAP_ROUND_LEN   =   4500
 class GOset():
 
     def __init__(self, node: node.NODE, dmx_str: str =GOSET_DMX_STR, epoch: int = 0,
-                 add_key_callback: Optional[Callable[[bytearray], Any]] = None) -> None:
+                 add_key_callback: Optional[Callable[[bytes], None]] = None) -> None:
         self.node = node
         self.dmx_str = dmx_str # for isp: dmx_str = GOSET_DMX_STR + contractID
         self.epoch = epoch
         self.is_root_goset = dmx_str == GOSET_DMX_STR
-        self.goset_dmx = hashlib.sha256(self.dmx_str.encode() + epoch.to_bytes()).digest()[:util.DMX_LEN]
+        self.goset_dmx = hashlib.sha256(self.dmx_str.encode() + (epoch.to_bytes() if not self.is_root_goset else b"") ).digest()[:util.DMX_LEN]
         self.want_dmx = self.compute_dmx('want'.encode('utf-8') + self.state)
         self.chunk_dmx = self.compute_dmx('blob'.encode('utf-8') + self.state)
         # self.novelt_and_claim_dmx = hashlib.sha256(self.dmx_str.encode()).digest()[:util.DMX_LEN]
         self.node.arm_dmx(self.goset_dmx, lambda pkt, aux: self.rx(pkt))
+        self.add_key_callback = add_key_callback
 
     state = bytearray(util.FID_LEN)
     keys = []
@@ -206,6 +207,9 @@ class GOset():
                 self.pending_novelty.append(n)
         print("GOSET _add_key(): added key", key)
 
+        if self.add_key_callback is not None:
+            self.add_key_callback(key)
+
 
     def _add_pending_claim(self, cl: Claim) -> None:
         for c in self.pending_claims:
@@ -270,6 +274,9 @@ class GOset():
     @staticmethod
     def compute_dmx(buf: bytes) -> bytes:
         return hashlib.sha256(DMX_PFX + buf).digest()[:util.DMX_LEN]
+    
+    def set_add_key_callback(self, callback: Callable[[bytes], None]) -> None:
+        self.add_key_callback = callback
 
 
     def update_want_dmx(self) -> None:
@@ -385,9 +392,13 @@ class GOsetManager():
                 go.beacon()
             time.sleep(GOSET_ROUND_LEN)
 
-    def add_goset(self, goset: GOset) -> None:
-        self.sets.add(goset)
-        self.offs[goset] = 0
+    def add_goset(self, dmx_str: str =GOSET_DMX_STR, epoch: int = 0,
+                 add_key_callback: Optional[Callable[[bytes], None]] = None) -> GOset:
+        go = GOset(self.node, dmx_str, epoch, add_key_callback)
+        self.sets.add(go)
+        self.offs[go] = 0
+
+        return go
 
     def remove_goset(self, goset: GOset) -> bool:
         for go in self.sets:
@@ -397,12 +408,6 @@ class GOsetManager():
                 del self.offs[go]
                 return True
         return False
-  
-    def on_rx(self, buf: bytearray) -> None:
-        print("received something")
-        for go in self.sets:
-            if buf[util.DMX_LEN + 1:(util.DMX_LEN + 1) + util.DMX_LEN] == go.novelt_and_claim_dmx:
-                go.rx(buf)
 
     def arq_loop(self) -> None:
         for go in self.sets:

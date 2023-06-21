@@ -164,7 +164,7 @@ cython_debug/
 *.iml
 .gradle
 /local.properties
-/.idea/caches
+android/.idea/caches
 /.idea/libraries
 /.idea/modules.xml
 /.idea/workspace.xml

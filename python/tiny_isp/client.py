@@ -2,9 +2,13 @@
 from typing import Optional
 from tinyssb.goset import GOset, GOsetManager
 from tinyssb.repo import LogTinyEntry
+from tinyssb.util import atomic_write
 from .feed_pub import FeedPub
 from .protocol import Tiny_ISP_Protocol
+from tinyssb.keystore import Keystore
 import hashlib
+import base64
+import bipf
 
 STATE_ONBOARDING = "onboarding"
 STATE_ESTABLISHED = "established"
@@ -35,25 +39,21 @@ class Client:
         self.client_ctrl_feed = client_ctrl
         self.status = STATE_ONBOARDING
 
-        self.isp_ctr_feed = None
-        self.client_data_feeds: list[bytes] = []
-        self.isp_data_feeds: list[bytes] = []
+        self.isp_ctrl_feed = None
 
-        self.subscriptions: list[bytes] = []
+        self.data_goset: Optional[GOset] = None
 
+        # load if called from load_from_file() all stored information
         if loaded_information:
-            self.load(loaded_information)
-        # data and control feeds
-        
-        
+            ##self.load(loaded_information)
+            return
 
-        
-        self.go_sets: list[GOset] = []
+        # otherwise we need to create a new isp->Client ctrl feed and notify the client
+        self.isp_ctrl_feed = self.isp.create_new_feed()
+        self.ctrl_goset._add_key(self.isp_ctrl_feed)
+        self.ctrl_goset.adjust_state()
 
-        self.contract_Status = None
-
-    def load(self, data: dict) -> None:
-        pass
+        #self.dump()
 
     def on_rx(self, event: LogTinyEntry) -> None:
         fid = event.fid
@@ -62,37 +62,45 @@ class Client:
 
         if cmd is None:
             return
-        
+
         match cmd:
-            case "":
+            case Tiny_ISP_Protocol.TYPE_ONBOARDING_ACK:
                 pass
 
-    def add_isp_control_feed(self, feed_id: bytes) -> bool:
-        if self.go_sets[-1]._include_key(feed_id):
-            self.isp_ctr_feed = feed_id
-            return True
-        return False
+    # def add_isp_control_feed(self, feed_id: bytes) -> bool:
+    #     if self.go_sets[-1]._include_key(feed_id):
+    #         self.isp_ctrl_feed = feed_id
+    #         return True
+    #     return False
         
-    def add_client_data_feed(self, feed_id: bytes) -> bool:
-        if self.go_sets[-1]._include_key(feed_id):
-            self.client_data_feeds.append(feed_id)
-            return True
-        return False
+    # def add_client_data_feed(self, feed_id: bytes) -> bool:
+    #     if self.go_sets[-1]._include_key(feed_id):
+    #         self.client_data_feeds.append(feed_id)
+    #         return True
+    #     return False
 
-    def add_isp_data_feed(self, feed_id: bytes) -> bool:
-        if self.go_sets[-1]._include_key(feed_id):
-            self.isp_data_feeds.append(feed_id)
-            return True
-        return False
+    # def add_isp_data_feed(self, feed_id: bytes) -> bool:
+    #     if self.go_sets[-1]._include_key(feed_id):
+    #         self.isp_data_feeds.append(feed_id)
+    #         return True
+    #     return False
 
-    def save_to_file(self, path: str) -> None:
-        pass
-    
+    def dump(self, path: str) -> None:
+        data = {
+            'client_id': self.client_id,
+            'contract_id': self.contract_id,
+            'client_ctrl_feed': self.client_ctrl_feed,
+            'isp_ctrl_feed': self.isp_ctrl_feed,
+            'data_goset_epoch': self.data_goset.epoch,
+            'data_goset_keys': self.data_goset.keys,
+            'status': self.status
+        }
+        with atomic_write(path, binary=True) as f:
+            f.write(bipf.dumps(data))
+
     @staticmethod
-    def load_from_file(path: str) -> 'Client':
-        client_id = bytes()
-        contract_id = bytes()
-        client_ctrl = bytes()
-        return Client(client_id, contract_id, client_ctrl)
-
-
+    def load(isp, path: str) -> 'Client':
+        with open(path, 'rb') as f:
+            data = bipf.decode(f.read())
+        cl = Client(isp, data['client_id'], data['contract_id'], data['client_ctrl_feed'])
+        return cl

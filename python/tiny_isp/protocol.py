@@ -58,10 +58,11 @@ class Tiny_ISP_Protocol:
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_ONBOARDING_REQUEST, [target, ctrl_feed])
 
     @staticmethod
-    def onbord_response(accepted: bool, ctrl_feed: Optional[bytes]) -> bytes:
+    def onbord_response(ref: bytes, accepted: bool, ctrl_feed: Optional[bytes] = None) -> bytes:
         if accepted and ctrl_feed is None:
             raise MissingControlFeedException("Onboard request accepted, but no control feed is provided")
         args = []
+        args.append(ref)
         args.append(accepted)
         args.append(ctrl_feed)
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_ONBOARDING_RESPONSE, args)

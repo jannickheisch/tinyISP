@@ -33,7 +33,7 @@ class Novelty:
 
 class Dmx:
     
-    def __init__(self, dmx: bytes, fct: Callable[[bytes], None], aux: Optional[bytes] = None) -> None:
+    def __init__(self, dmx: bytes, fct: Callable[[bytes, Optional[bytes]], None], aux: Optional[bytes] = None) -> None:
         self.dmx = dmx
         self.fct = fct
         self.aux = aux
@@ -65,8 +65,8 @@ class NODE:  # a node in the tinySSB forwarding fabric
         self.ndlock = _thread.allocate_lock()
 
         self.goset_manager = goset.GOsetManager(self)
-        self.goset = goset.GOset(self)
-        self.goset_manager.add_goset(self.goset)
+        self.goset = self.goset_manager.add_goset("tinySSB-0.1 GOset 1", 0)
+        
         self.repo = repo.Repo(self, os.path.join(util.DATA_FOLDER, name), self.goset)
         
         self.log_offs = 0
@@ -156,12 +156,14 @@ class NODE:  # a node in the tinySSB forwarding fabric
         return rc
 
 
-    def publish_public_content(self, content: bytes) -> bool:
-        pkt = self.repo.mk_content_log_entry(content)
+    def publish_public_content(self, content: bytes, pk: Optional[bytes] = None) -> bool:
+        if pk is None:
+            pk = self.me
+        pkt = self.repo.mk_content_log_entry(pk, content)
         print("pub:",len(content))
         if pkt is None:
             return False
-        return self.repo.feed_append(self.me, pkt)
+        return self.repo.feed_append(pk, pkt)
 
     # ----------------------------------------------------------------------
 

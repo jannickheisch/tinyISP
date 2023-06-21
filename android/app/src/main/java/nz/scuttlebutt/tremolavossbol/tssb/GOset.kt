@@ -3,6 +3,8 @@ package nz.scuttlebutt.tremolavossbol.tssb
 import android.util.Log
 import nz.scuttlebutt.tremolavossbol.MainActivity
 import nz.scuttlebutt.tremolavossbol.crypto.SodiumAPI.Companion.sha256
+import nz.scuttlebutt.tremolavossbol.utils.Bipf
+import nz.scuttlebutt.tremolavossbol.utils.Constants
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.DMX_LEN
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.FID_LEN
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.GOSET_DMX_STR
@@ -27,7 +29,7 @@ class Novelty {
     var wire = ByteArray(0)
 }
 
-class GOset(val context: MainActivity) {
+class GOset(val context: MainActivity, val dmx_str: String = GOSET_DMX_STR, val epoch: Int = 0) {
     /* packet format:
         n 32B 32B? 32B?  // 33 bytes, in the future up to two additional keys
         c 32B 32B 32B B  // 98 bytes
@@ -48,12 +50,17 @@ class GOset(val context: MainActivity) {
     val HELP_PER_ROUND  =      2
     val ZAP_ROUND_LEN   =   4500
 
-    val goset_dmx = GOSET_DMX_STR.encodeToByteArray().sha256().sliceArray(0..DMX_LEN-1)
+    var state = ByteArray(FID_LEN)
 
+    val str = dmx_str + if (epoch == 0) "" else epoch
+    var goset_dmx = str.encodeToByteArray().sha256().sliceArray(0..DMX_LEN-1)
+    var want_dmx = context.tinyDemux.compute_dmx("want".encodeToByteArray() + state)
+    var chunk_dmx = context.tinyDemux.compute_dmx("blob".encodeToByteArray() + state)
+    val is_root_goset = dmx_str == GOSET_DMX_STR
     // unsigned short version; ??
     // const char* fname;
     // int goset_len; // number of set elements
-    var state = ByteArray(FID_LEN)
+
     val keys = ArrayList<ByteArray>(0)
     var pending_claims = ArrayList<Claim>(0)
     val pending_novelty = ArrayDeque<Novelty>(0)
@@ -65,7 +72,7 @@ class GOset(val context: MainActivity) {
     // unsigned long zap_next;
 
     fun rx(pkt: ByteArray, aux: ByteArray?) {
-        // Log.d("goset", "rx ${pkt.size}")
+        Log.d("goset", "rx ${pkt.size}")
 
         if (pkt.size <= DMX_LEN)
             return
@@ -127,6 +134,8 @@ class GOset(val context: MainActivity) {
         }
         */
         // Log.d("GOset", "beacon")
+        Log.d("goset", "goset_dmx: ${goset_dmx.toHex()}")
+        Log.d("goset", "goset_string: $str")
         if (keys.size == 0) return
         while (novelty_credit-- > 0 && pending_novelty.size > 0)
             context.tinyIO.enqueue(pending_novelty.removeFirst().wire, goset_dmx, null)
@@ -136,7 +145,7 @@ class GOset(val context: MainActivity) {
         if (byteArrayCmp(cl.xo, state) != 0) { // GOset changed
             Log.d("goset", "state change to ${cl.xo.toHex()}, |keys|=${keys.size}")
             state = cl.xo
-            context.tinyDemux.set_want_dmx(state)
+            context.tinyDemux.set_want_dmx(this)
         }
         context.tinyIO.enqueue(cl.wire, goset_dmx, null);
 
@@ -147,6 +156,7 @@ class GOset(val context: MainActivity) {
 
         val retain = ArrayList<Claim>()
         for (c in pending_claims) {
+            Log.d("goset", "pending claim loop")
             if (c.sz == 0) continue // ignore bogous claims
             var lo = keys.indexOfFirst({k -> byteArrayCmp(k,c.lo) == 0})
             var hi = keys.indexOfFirst({k -> byteArrayCmp(k,c.hi) == 0})
@@ -167,13 +177,15 @@ class GOset(val context: MainActivity) {
             }
             if (max_help-- > 0) { // we have larger claim span, offer help (but limit # of claims)
                 hi--; lo++
-                // Serial.print("offer help span=" + String(partial->cnt - 2));
+                // Log.d("goset","offer help span= " + String(partial->cnt - 2));
                 // Serial.print(String(" ") + to_hex(gp->goset_keys+lo*GOSET_KEY_LEN,4) + String(".."));
                 // Serial.println(String(" ") + to_hex(gp->goset_keys+hi*GOSET_KEY_LEN,4) + String(".."));
+                Log.d("goset", "max_help ${lo}, ${hi}")
                 if (hi <= lo)
                     context.tinyIO.enqueue(mkNovelty_from_key(keys[lo]).wire, goset_dmx, null)
-                else if (hi - lo <= 2) // span of 2 or 3
+                else if (hi - lo <= 2) { // span of 2 or 3
                     context.tinyIO.enqueue(mkClaim(lo, hi).wire, goset_dmx, null)
+                }
                 else { // split span in two intervals
                     val sz = (hi+1 - lo) / 2
                     context.tinyIO.enqueue(mkClaim(lo, lo+sz-1).wire, goset_dmx, null)
@@ -214,7 +226,10 @@ class GOset(val context: MainActivity) {
     fun _add_key(key: ByteArray) {
         if (!_include_key(key)) // adds key if necessary
             return
-        context.tinyRepo.new_feed(key)
+        val type = if(is_root_goset) context.tinyRepo.FEED_TYPE_ROOT else context.tinyRepo.FEED_TYPE_ISP_VIRTUAL
+
+        if (!context.tinyRepo.feed_exists(key))
+            context.tinyRepo.new_feed(key, type)
 
         keys.sortWith({a:ByteArray,b:ByteArray -> byteArrayCmp(a,b)})
         if (keys.size >= largest_claim_span) { // only rebroadcast if we are up to date
@@ -224,6 +239,7 @@ class GOset(val context: MainActivity) {
             else if (pending_novelty.size < MAX_PENDING)
                 pending_novelty.add(n)
         }
+        context.ble?.refreshShortNameForKey(key) // refresh shortname in devices overview
         Log.d("goset", "added key ${key.toHex()}, |keys|=${keys.size}")
     }
 
@@ -242,7 +258,7 @@ class GOset(val context: MainActivity) {
         } else
             state = ByteArray(FID_LEN)
         Log.d("goset", "adjust state for ${keys.size} keys, resulted in ${state.toHex()}")
-        context.tinyDemux.set_want_dmx(state)
+        context.tinyDemux.set_want_dmx(this)
     }
 
     fun mkClaim(pkt: ByteArray): Claim {
@@ -290,4 +306,129 @@ class GOset(val context: MainActivity) {
         // Log.d("xor", "xo=${xor.toHex()}")
         return xor
     }
+
+    fun incoming_want_request(buf: ByteArray, aux: ByteArray?, sender: String?) {
+        Log.d("node", "incoming WANT ${buf.toHex()} from sender: $sender")
+        val vect = Bipf.bipf_loads(buf.sliceArray(DMX_LEN..buf.lastIndex))
+        if (vect == null || vect.typ != Bipf.BIPF_LIST) return
+        val lst = vect.getList()
+        if (lst.size < 1 || lst[0].typ != Bipf.BIPF_INT) {
+            Log.d("node", "incoming WANT error with offset")
+            return
+        }
+        val offs = lst[0].getInt()
+        var v = "WANT vector=["
+        var vector = mutableMapOf<Int, Int>() //send to frontend
+        var credit = 3
+        for (i in 1..lst.lastIndex) {
+            val fid: ByteArray
+            var seq: Int
+            try {
+                val ndx = (offs + i - 1) % keys.size
+                fid = keys[ndx]
+                seq = lst[i].getInt()
+                v += " $ndx.${seq}"
+                vector[ndx] = seq
+            } catch (e: Exception) {
+                Log.d("node", "incoming WANT error ${e.toString()}")
+                continue
+            }
+            // Log.d("node", "want ${fid.toHex()}.${seq}")
+            while (credit > 0) {
+                val pkt = context.tinyRepo.feed_read_pkt(fid, seq)
+                if (pkt == null)
+                    break
+                Log.d("node", "  have entry ${fid.toHex()}.${seq}, dmx: ${pkt.sliceArray(0 until DMX_LEN).toHex()}")
+                context.tinyIO.enqueue(pkt)
+                seq++;
+                credit--;
+            }
+        }
+        v += " ]"
+        Log.d("node", v)
+        if(sender != null)
+            context.tinyNode.update_progress(vector.toSortedMap().values.toList(), sender)
+        if (credit == 3)
+            Log.d("node", "  no entry found to serve")
+    }
+
+    fun incoming_chunk_request(buf: ByteArray, aux: ByteArray?) {
+        Log.d("node", "incoming CHNK request")
+        val vect = Bipf.bipf_loads(buf.sliceArray(DMX_LEN..buf.lastIndex))
+        if (vect == null || vect.typ != Bipf.BIPF_LIST) {
+            Log.d("node", "  malformed?")
+            return
+        }
+        var v= "CHNK vector=["
+        var credit = 3
+        for (e in vect.getList()) {
+            val fNDX: Int
+            val fid: ByteArray
+            val seq: Int
+            var cnr: Int
+            try {
+                val lst = e.getList()
+                fNDX = lst[0].getInt()
+                fid = keys[fNDX]
+                seq = lst[1].getInt()
+                cnr = lst[2].getInt()
+                v += " ${fid.sliceArray(0..9).toHex()}.${seq}.${cnr}"
+            } catch (e: Exception) {
+                Log.d("node", "incoming CHNK error ${e.toString()}")
+                continue
+            }
+            val pkt = context.tinyRepo.feed_read_pkt(fid, seq)
+            if (pkt == null || pkt[DMX_LEN].toInt() != Constants.PKTTYPE_chain20) continue;
+            val (sz, szlen) = Bipf.varint_decode(pkt, DMX_LEN + 1, DMX_LEN + 4)
+            if (sz <= 28 - szlen) continue;
+            val maxChunks    = (sz - (28 - szlen) + 99) / 100
+            Log.d("node", "maxChunks is ${maxChunks}")
+            if (cnr > maxChunks) continue
+            while (cnr <= maxChunks && credit-- > 0) {
+                val chunk = context.tinyRepo.feed_read_chunk(fid, seq, cnr)
+                if (chunk == null) break;
+                Log.d("node", "  have chunk ${fid.sliceArray(0..19).toHex()}.${seq}.${cnr}")
+                context.tinyIO.enqueue(chunk);
+                cnr++;
+            }
+        }
+        v += " ]"
+        Log.d("node", v)
+    }
+}
+
+class GoSetManager(val context: MainActivity) {
+    val sets = ArrayList<GOset>()
+    val offs = mutableMapOf<GOset, Int>()
+    val GOSET_ROUND_LEN = 10000L
+
+    fun add_goset(dmx_str: String, epoch: Int): GOset {
+        val go = GOset(context, dmx_str, epoch)
+        sets.add(go)
+        offs[go] = 0
+
+        return go
+    }
+
+    fun add_goset(goset: GOset) {
+        sets.add(goset)
+        offs[goset] = 0
+    }
+
+    fun remove_goset(goset: GOset): Boolean {
+        val removed = sets.remove(goset)
+        if (removed)
+            offs.remove(goset)
+        return removed
+    }
+
+    fun loop() {
+        while (true) {
+            for (set in sets) {
+                set.beacon()
+                Thread.sleep(GOSET_ROUND_LEN)
+            }
+        }
+    }
+
 }

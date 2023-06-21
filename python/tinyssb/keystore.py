@@ -30,7 +30,7 @@ class Keystore:
     def dump(self, fn):
         # write DB to BIPF file
         data = bipf.dumps(dict(self.kv))
-        with open(fn, 'wb') as f:
+        with util.atomic_write(fn, binary=True) as f:
             f.write(data)
 
     def load(self, fn):

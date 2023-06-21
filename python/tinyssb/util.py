@@ -5,8 +5,12 @@
 
 import base64
 import sys
-
+import os
 import select
+
+from contextlib import contextmanager
+
+from typing import IO, Generator, Any
 
 if sys.implementation.name == 'micropython':
     import binascii
@@ -34,6 +38,23 @@ def byteArrayCmp(a: bytes, b: bytes) -> int:
         if d != 0:
             return d
     return 0
+
+@contextmanager
+def atomic_write(path, binary = False) -> Generator[IO[Any], None, None]:
+
+    tmp = f'{path}.tmp'
+    while os.path.exists(tmp):
+        tmp += '.tmp'
+
+    try:
+        with open(tmp, 'w+b' if binary else 'w+') as file:
+            yield file
+        os.rename(tmp, path)
+    finally:
+        try:
+            os.remove(tmp)
+        except:
+            pass
 
 # wrote our own json.dumps ..
 # because micropython's json.dumps() does not know how to pretty print

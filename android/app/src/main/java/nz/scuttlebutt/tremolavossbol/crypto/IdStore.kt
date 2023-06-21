@@ -4,27 +4,36 @@ import android.content.Context
 import android.util.Base64
 import android.util.Log
 import nz.scuttlebutt.tremolavossbol.MainActivity
+import nz.scuttlebutt.tremolavossbol.utils.Constants
 import org.json.JSONObject
 import java.io.FileOutputStream
 
 import nz.scuttlebutt.tremolavossbol.utils.HelperFunctions.Companion.toBase64
 import nz.scuttlebutt.tremolavossbol.utils.HelperFunctions.Companion.toHex
 import java.io.File
+import java.security.PublicKey
 
 class IdStore(val context: MainActivity) {
 
     var identity : SSBid
+    var keyStore = mapOf<ByteArray, SSBid>()
+    private val sharedPreferences = context.getSharedPreferences("keystore", Context.MODE_PRIVATE)
 
     init {
         val id = readFromFile()
         if (id == null) {
             // Log.d("IdStore init", "no secret found")
             identity = SSBid() // create
+            Log.d("keystoreInit", "put ${identity.verifyKey.toBase64()}, ${identity.signingKey!!.toBase64()} ")
+            sharedPreferences.edit().putString(identity.verifyKey.toBase64(), identity.signingKey!!.toBase64()).apply()
             writeToFile(identity)
-        } else
+        } else {
             identity = id
+            sharedPreferences.edit().putString(identity.verifyKey.toBase64(), identity.signingKey!!.toBase64()).apply()
+        }
+
         // for tinyssb:
-        val fdir = File(context.getDir(context.tinyRepo.TINYSSB_DIR, Context.MODE_PRIVATE), context.tinyRepo.FEED_DIR)
+        val fdir = File(context.getDir(Constants.TINYSSB_DIR, Context.MODE_PRIVATE), context.tinyRepo.FEED_DIR)
         if (!File(fdir, "${identity.verifyKey.toHex()}").exists()) {
             Log.d("idstore","create new feed repo")
             context.tinyRepo.new_feed(identity.verifyKey)
@@ -67,6 +76,28 @@ class IdStore(val context: MainActivity) {
         return false
     }
 
+    fun getID(pubkey: ByteArray): SSBid {
+        Log.d("getId", "for ${pubkey.toHex()}")
+        val secret = sharedPreferences.getString(pubkey.toBase64(), "")
+
+        Log.d("getid", "secret: $secret")
+
+        if (secret == "")
+            return SSBid(pubkey)
+        else
+            return SSBid(Base64.decode(secret, Base64.NO_WRAP), pubkey)
+    }
+
+    fun clearKeystore() {
+        sharedPreferences.edit().clear().apply()
+    }
+
+    private fun new(): SSBid {
+        val new_id = SSBid()
+        sharedPreferences.edit().putString(new_id.verifyKey.toBase64(), new_id.signingKey!!.toBase64()).apply()
+        return new_id
+    }
+
     private fun readFromFile(): SSBid? {
         try {
             val inputStream = context.openFileInput("secret")
@@ -85,6 +116,8 @@ class IdStore(val context: MainActivity) {
         }
         return null
     }
+
+
 
     fun setNewIdentity(newSecret: ByteArray?): Boolean {
         val newId = if (newSecret == null) SSBid() else SSBid(newSecret)

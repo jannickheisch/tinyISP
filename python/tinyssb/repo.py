@@ -1,5 +1,4 @@
 import hashlib
-from .node import NODE
 from . import util
 from .goset import GOset
 from .util import PKTTYPE_chain20, PKTTYPE_plain48, DMX_LEN, TINYSSB_PKT_LEN, HASH_LEN, DMX_PFX
@@ -17,7 +16,7 @@ class Feed:
     def __init__(self, fid: bytes, typ:str) -> None:
         self.fid = fid
         self.next_seq = 1
-        self.prev_hash = fid
+        self.prev_hash = fid[:HASH_LEN]
         self.type = typ
 
     def __len__(self) -> int:
@@ -34,7 +33,7 @@ class LogTinyEntry:
 
 class Repo:
 
-    def __init__(self, node: NODE, path: str, root_go_set: GOset) -> None:
+    def __init__(self, node, path: str, root_go_set: GOset) -> None:
         self.node = node
         self.path = path
         self.root_go_set = root_go_set
@@ -52,7 +51,7 @@ class Repo:
 
 
     def fid2rec(self, fid: bytes, create_if_needed: bool = False, feed_type: str = FEED_TYPE_ROOT) -> Optional[Feed]:
-        feed = next((f for f in self.feeds if f.fid == fid))
+        feed = next((f for f in self.feeds if f.fid == fid), None)
 
         if feed is not None:
             return feed
@@ -112,6 +111,7 @@ class Repo:
                 with open(m, "w+"):
                     pass
             if os.path.getsize(m) >= HASH_LEN:
+                print("laod mid")
                 with open(m, "rb") as f:
                     f.seek(os.path.getsize(m) - HASH_LEN)
                     frec.prev_hash = f.read()
@@ -201,8 +201,8 @@ class Repo:
         f = os.path.join(os.path.join(self.FEED_DIR, fid.hex()), "log")
         return os.path.getsize(f) // TINYSSB_PKT_LEN
     
-    def mk_content_log_entry(self, content: bytes) -> Optional[bytes]:
-        fid = self.node.me
+    def mk_content_log_entry(self, pk: bytes, content: bytes) -> Optional[bytes]:
+        fid = pk
         frec = self.fid2rec(fid, False)
         if frec is None:
             return None
@@ -258,8 +258,10 @@ class Repo:
         
         with self._open_file(fid, "ab") as f:
             f.write(pkt)
-        h = hashlib.sha256(pkt[:HASH_LEN]).digest()
+        h = hashlib.sha256(buf).digest()[:HASH_LEN]
+        print("change prev from:", self.feeds[ndx].prev_hash.hex(), "to", h)
         self.feeds[ndx].prev_hash = h
+        print("prev after change",self.feeds[ndx].prev_hash)
         if self.feeds[ndx].next_seq >= 1:
             with self._open_file(fid, "ab", 1) as f:
                 f.write(h)

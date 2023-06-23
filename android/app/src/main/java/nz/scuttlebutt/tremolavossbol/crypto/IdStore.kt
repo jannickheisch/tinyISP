@@ -92,7 +92,7 @@ class IdStore(val context: MainActivity) {
         sharedPreferences.edit().clear().apply()
     }
 
-    private fun new(): SSBid {
+    fun new(): SSBid {
         val new_id = SSBid()
         sharedPreferences.edit().putString(new_id.verifyKey.toBase64(), new_id.signingKey!!.toBase64()).apply()
         return new_id

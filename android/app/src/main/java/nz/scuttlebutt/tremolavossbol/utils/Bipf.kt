@@ -26,11 +26,22 @@ class Bipf_e(t: Int) {
                                 else throw Exception("BIPF type is ${typ} instead of INT")}
     fun getList(): ArrayList<Bipf_e> { if (typ == BIPF_LIST) return v as ArrayList<Bipf_e>
                                 else throw Exception("BIPF type is ${typ} instead of LIST")}
-    fun getBoolean(): Boolean { if (typ == BIPF_BOOLNONE && v as Int >= 0) return (v as Int) > 0
-                                else throw Exception("BIPF type is ${typ} instead of BOOL")}
+    fun getBoolean(): Boolean { when(v) {
+                                    is Boolean -> return v as Boolean
+                                    is Int -> return (v!! as Int) > 0
+                                    else -> throw Exception("bipf decode error")
+                                }
+    }
     fun isNone(): Boolean     { return typ == BIPF_BOOLNONE && (v as Int) == -1 }
+
+    fun isList(): Boolean {return typ == BIPF_LIST}
 }
 
+/*
+if (typ == BIPF_BOOLNONE && v as Int >= 0) return (v as Int) > 0
+
+                                else throw Exception("BIPF type is ${typ} instead of BOOL")
+ */
 class Bipf {
     companion object {
         val BIPF_STRING = 0
@@ -301,7 +312,7 @@ class Bipf {
                     BIPF_INT      -> { obj.put(i, le.getInt()) }
                     BIPF_LIST     -> { obj.put(i, bipf_list2JSON(le)) }
                     BIPF_BOOLNONE -> {
-                        if ((lst[i].v as Int) < 0)
+                        if (lst[i].v!!::class != Boolean::class)
                             obj.put(i, null)
                         else
                             obj.put(i, le.getBoolean())

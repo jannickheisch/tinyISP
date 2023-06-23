@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd": "C:\/Users\/Jannick\/Documents\/My Documents\/Uni\/FS2023\/tinyISP\/python",
-            "args": ["Bob"],
+            "args": [""],
             "justMyCode": true
         }
     ]

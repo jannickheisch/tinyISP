@@ -49,7 +49,7 @@ def atomic_write(path, binary = False) -> Generator[IO[Any], None, None]:
     try:
         with open(tmp, 'w+b' if binary else 'w+') as file:
             yield file
-        os.rename(tmp, path)
+        os.replace(tmp, path)
     finally:
         try:
             os.remove(tmp)

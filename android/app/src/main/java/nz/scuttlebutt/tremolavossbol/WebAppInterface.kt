@@ -13,11 +13,15 @@ import android.webkit.WebView
 import android.widget.Toast
 import androidx.core.content.ContextCompat.checkSelfPermission
 import com.google.zxing.integration.android.IntentIntegrator
+import nz.scuttlebutt.tremolavossbol.crypto.SSBid
+import nz.scuttlebutt.tremolavossbol.isp.ISP
+import nz.scuttlebutt.tremolavossbol.isp.TinyISPProtocol
 import org.json.JSONObject
 
 import nz.scuttlebutt.tremolavossbol.tssb.LogTinyEntry
 import nz.scuttlebutt.tremolavossbol.utils.Bipf
 import nz.scuttlebutt.tremolavossbol.utils.Bipf.Companion.BIPF_LIST
+import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_ISP
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_TEXTANDVOICE
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_KANBAN
 import nz.scuttlebutt.tremolavossbol.utils.HelperFunctions.Companion.toBase64
@@ -215,6 +219,12 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
                     "websocket" -> {act.settings!!.setWebsocketEnabled(args[2].toBooleanStrict())}
                 }
             }
+            "isp:onboardRequest" -> {
+                val isp_feed = Base64.decode(args[1], Base64.NO_WRAP)
+                val client_ctrl_feed = act.idStore.new()
+
+                act.tinyNode.publish_public_content(TinyISPProtocol.request_onboarding(isp_feed,client_ctrl_feed.verifyKey))
+            }
             else -> {
                 Log.d("onFrontendRequest", "unknown")
             }
@@ -322,6 +332,32 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
 
     fun sendTinyEventToFrontend(entry: LogTinyEntry) {
         Log.d("wai","sendTinyEvent ${entry.body.toHex()}")
+        val buf = Bipf.decode(entry.body)
+        if (buf != null && buf.typ == BIPF_LIST) {
+            val lst = Bipf.bipf_list2JSON(buf)
+            if (lst!!.length() > 2) {
+                if (lst[0] == "ISP" && lst[1] == TinyISPProtocol.TYPE_ONBOARDING_REQUEST && entry.fid.contentEquals(act.idStore.identity.verifyKey)) {
+                    val ispID = Base64.decode(lst[2] as String, Base64.NO_WRAP)
+                    val ctrl_feed = Base64.decode(lst[3] as String, Base64.NO_WRAP)
+                    val isp = ISP(act, ispID, ctrl_feed, entry.mid)
+                    act.ispList.add(isp)
+                } else if (lst[0] == "ISP" && lst[1] == TinyISPProtocol.TYPE_ONBOARDING_RESPONSE) {
+                    Log.d("wai", "recieved isp response")
+                    Log.d("onboard_response", "ispID: ${act.ispList[0].ispID.toHex()}, contractId: ${act.ispList[0].contractID}")
+                    val isp = act.ispList.find { it.ispID.contentEquals(entry.fid) && it.contractID.contentEquals(
+                        Base64.decode(lst[2] as String, Base64.NO_WRAP)
+                    ) }
+                    if (isp != null) {
+                        if (!(lst[3] as Boolean)) {
+                            isp.delete()
+                            act.ispList.remove(isp)
+                        }
+                        val isp_ctrl_feed = Base64.decode(lst[4] as String, Base64.NO_WRAP)
+                        isp.add_isp_ctrl_feed(isp_ctrl_feed)
+                    }
+                }
+            }
+        }
         sendToFrontend(entry.fid, entry.seq, entry.mid, entry.body)
     }
 

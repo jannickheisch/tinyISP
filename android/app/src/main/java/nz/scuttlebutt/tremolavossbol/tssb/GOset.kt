@@ -29,7 +29,7 @@ class Novelty {
     var wire = ByteArray(0)
 }
 
-class GOset(val context: MainActivity, val dmx_str: String = GOSET_DMX_STR, val epoch: Int = 0) {
+class GOset(val context: MainActivity, val add_key_callback: (ByteArray) -> Unit, val dmx_str: String = GOSET_DMX_STR, val epoch: Int = 0) {
     /* packet format:
         n 32B 32B? 32B?  // 33 bytes, in the future up to two additional keys
         c 32B 32B 32B B  // 98 bytes
@@ -70,6 +70,11 @@ class GOset(val context: MainActivity, val dmx_str: String = GOSET_DMX_STR, val 
     // struct zap_s zap;
     // unsigned long zap_state;
     // unsigned long zap_next;
+
+    init {
+        context.tinyDemux.set_want_dmx(this)
+        context.tinyDemux.arm_dmx(goset_dmx,  {buf:ByteArray, aux:ByteArray?, _ -> rx(buf,aux)}, null)
+    }
 
     fun rx(pkt: ByteArray, aux: ByteArray?) {
         Log.d("goset", "rx ${pkt.size}")
@@ -220,6 +225,7 @@ class GOset(val context: MainActivity, val dmx_str: String = GOSET_DMX_STR, val 
         }
         Log.d("goset","_include_key ${key.toHex()}, keys.size was ${keys.size}")
         keys.add(key)
+        add_key_callback(key)
         return true
     }
 
@@ -241,6 +247,7 @@ class GOset(val context: MainActivity, val dmx_str: String = GOSET_DMX_STR, val 
         }
         context.ble?.refreshShortNameForKey(key) // refresh shortname in devices overview
         Log.d("goset", "added key ${key.toHex()}, |keys|=${keys.size}")
+
     }
 
     fun _add_pending_claim(cl: Claim) {
@@ -402,8 +409,8 @@ class GoSetManager(val context: MainActivity) {
     val offs = mutableMapOf<GOset, Int>()
     val GOSET_ROUND_LEN = 10000L
 
-    fun add_goset(dmx_str: String, epoch: Int): GOset {
-        val go = GOset(context, dmx_str, epoch)
+    fun add_goset(add_key_callback: (ByteArray) -> Unit, dmx_str: String, epoch: Int = 0): GOset {
+        val go = GOset(context, add_key_callback, dmx_str, epoch)
         sets.add(go)
         offs[go] = 0
 

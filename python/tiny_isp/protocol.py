@@ -68,8 +68,8 @@ class Tiny_ISP_Protocol:
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_ONBOARDING_RESPONSE, args)
 
     @staticmethod
-    def onboard_ack() -> bytes:
-        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_ONBOARDING_ACK)
+    def onboard_ack(data_feed: bytes) -> bytes:
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_ONBOARDING_ACK, [data_feed])
 
 
     @staticmethod
@@ -89,14 +89,14 @@ class Tiny_ISP_Protocol:
         except:
             return (None , None)
         
-        if payload is None:
+        if payload is None or len(payload) < 2 or payload[0] != "ISP":
             return (None, None)
 
-        if len(payload) == 1:
-            return (payload[0], None)
+        if len(payload) == 2:
+            return (payload[1], None)
 
-        if len(payload) > 1:
-            return (payload[0], payload[1:])
+        if len(payload) > 2:
+            return (payload[1], payload[2:])
 
         return (None, None)
 

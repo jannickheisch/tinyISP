@@ -6,7 +6,7 @@ var overlayIsActive = false;
 
 var display_or_not = [
     'div:qr', 'div:back',
-    'core', 'lst:chats', 'lst:posts', 'lst:contacts', 'lst:members', 'the:connex',
+    'core', 'lst:chats', 'lst:posts', 'lst:contacts', 'lst:members', 'lst:isp',
     'lst:kanban', 'div:footer', 'div:textarea', 'div:confirm-members', 'plus',
     'div:settings', 'div:board'
 ];
@@ -18,7 +18,7 @@ var scenarioDisplay = {
     'chats': ['div:qr', 'core', 'lst:chats', 'div:footer'], // 'plus' TODO reactivate when encrypted chats are implemented
     'contacts': ['div:qr', 'core', 'lst:contacts', 'div:footer', 'plus'],
     'posts': ['div:back', 'core', 'lst:posts', 'div:textarea'],
-    'connex': ['div:qr', 'core', 'the:connex', 'div:footer', 'plus'],
+    'isp': ['div:qr', 'core', 'lst:isp', 'div:footer', 'plus'],
     'members': ['div:back', 'core', 'lst:members', 'div:confirm-members'],
     'settings': ['div:back', 'div:settings'],
     'kanban': ['div:qr', 'core', 'lst:kanban', 'div:footer', 'plus'],
@@ -33,8 +33,7 @@ var scenarioMenu = {
         ['Connected Devices', 'menu_connection'],
         ['Settings', 'menu_settings'],
         ['About', 'menu_about']],
-    'connex': [['New SSB pub', 'menu_new_pub'],
-        ['Redeem invite code', 'menu_invite'],
+    'isp': [['Request Onboarding', 'menu_isp_announcements'],
         ['Connected Devices', 'menu_connection'],
         // ['<del>Force sync</del>', 'menu_sync'],
         ['Settings', 'menu_settings'],
@@ -82,7 +81,7 @@ function onBackPressed() {
         closeOverlay();
         return;
     }
-    if (['chats', 'contacts', 'connex', 'board'].indexOf(curr_scenario) >= 0) {
+    if (['chats', 'contacts', 'isp', 'board'].indexOf(curr_scenario) >= 0) {
         if (curr_scenario == 'chats')
             backend("onBackPressed");
         else if (curr_scenario == 'board')
@@ -104,7 +103,7 @@ function setScenario(s) {
     var lst = scenarioDisplay[s];
     if (lst) {
         // if (s != 'posts' && curr_scenario != "members" && curr_scenario != 'posts') {
-        if (['chats', 'contacts', 'connex', 'kanban'].indexOf(curr_scenario) >= 0) {
+        if (['chats', 'contacts', 'isp', 'kanban'].indexOf(curr_scenario) >= 0) {
             var cl = document.getElementById('btn:' + curr_scenario).classList;
             cl.toggle('active', false);
             cl.toggle('passive', true);
@@ -138,7 +137,7 @@ function setScenario(s) {
             prev_scenario = s;
         }
         curr_scenario = s;
-        if (['chats', 'contacts', 'connex', 'kanban'].indexOf(curr_scenario) >= 0) {
+        if (['chats', 'contacts', 'isp', 'kanban'].indexOf(curr_scenario) >= 0) {
             var cl = document.getElementById('btn:' + curr_scenario).classList;
             cl.toggle('active', true);
             cl.toggle('passive', false);
@@ -152,7 +151,7 @@ function setScenario(s) {
 
 function btnBridge(e) {
     var e = e.id, m = '';
-    if (['btn:chats', 'btn:posts', 'btn:contacts', 'btn:connex', 'btn:kanban'].indexOf(e) >= 0) {
+    if (['btn:chats', 'btn:posts', 'btn:contacts', 'btn:isp', 'btn:kanban'].indexOf(e) >= 0) {
         setScenario(e.substring(4));
     }
     if (e == 'btn:menu') {
@@ -225,6 +224,9 @@ function closeOverlay() {
     document.getElementById('div:debug').style.display = 'none'
     document.getElementById("div:invite_menu").style.display = 'none'
 
+    //isp overlays
+    document.getElementById("isp-announcements-overlay").style.display = 'none'
+
     overlayIsActive = false;
 
     if (curr_img_candidate != null) {
@@ -263,8 +265,8 @@ function plus_button() {
         menu_new_conversation();
     } else if (curr_scenario == 'contacts') {
         menu_new_contact();
-    } else if (curr_scenario == 'connex') {
-        menu_new_pub();
+    } else if (curr_scenario == 'isp') {
+        menu_isp_announcements();
     } else if (curr_scenario == 'kanban') {
         menu_new_board();
     }

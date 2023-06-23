@@ -798,7 +798,12 @@ function resetTremola() { // wipes browser-side content
         "profile": {},
         "id": myId,
         "settings": get_default_settings(),
-        "board": {}
+        "board": {},
+        "isp": {
+            "announcements": [],
+            "pending": [],
+            "subscribed": []
+        }
     }
     var n = recps2nm([myId])
 
@@ -1028,6 +1033,19 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
         } else if (e.public[0] == "KAN") { // Kanban board event
             console.log("New kanban event")
             kanban_new_event(e)
+        } else if (e.public[0] == "ISP") {
+            var cmd = e.public[1]
+            switch (cmd) {
+                case ISP_TYPE_ANNOUNCEMENT:
+                    console.log("received isp announcement")
+                    if (!tremola.isp.announcements.includes(e.header.fid)) {
+                        console.log("added announcement")
+                        tremola.isp.announcements.push(e.header.fid)
+                        menu_isp_announcements_create_entry(e.header.fid)
+                    }
+
+                    break
+            }
         }
         persist();
         must_redraw = true;

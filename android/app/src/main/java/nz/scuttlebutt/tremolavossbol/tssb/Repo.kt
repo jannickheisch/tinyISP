@@ -67,6 +67,7 @@ class Repo(val context: MainActivity) {
         if (!createIfNeeded)
             return null
         // Log.d("repo", "create new feed ${fid.toHex()}")
+        Log.d("fid2rec", "create new feed ${fid.toHex()} with type $feed_type")
         val frec = Feed(fid, feed_type)
         feeds.add(frec)
         // Log.d("repo", "use NEW feed record ${frec}")
@@ -107,6 +108,14 @@ class Repo(val context: MainActivity) {
 
     fun repo_reset() {
         repo_clean(context.getDir(TINYSSB_DIR, MODE_PRIVATE));
+    }
+
+    fun remove_feed(fid: ByteArray): Boolean {
+        val f = File(File(context.getDir(TINYSSB_DIR, MODE_PRIVATE), FEED_DIR), fid.toHex())
+        if(!f.isDirectory || f.name.length != 2* FID_LEN)
+            return false
+        return f.delete()
+
     }
 
     fun repo_load() {
@@ -359,7 +368,8 @@ class Repo(val context: MainActivity) {
         if (pkt[DMX_LEN].toInt() == PKTTYPE_plain48) {
             Log.d("repo", "plain 48")
             val e = LogTinyEntry(fid, seq, h, pkt.sliceArray(DMX_LEN + 1..DMX_LEN + 1 + 48 - 1))
-            context.wai.sendTinyEventToFrontend(e)
+            //context.wai.sendTinyEventToFrontend(e)
+            context.feedPub.on_rx(e)
         }
         if (pkt[DMX_LEN].toInt() == PKTTYPE_chain20) {
             val (sz, len) = varint_decode(pkt, DMX_LEN + 1, DMX_LEN + 4)
@@ -370,7 +380,8 @@ class Repo(val context: MainActivity) {
                 val content = pkt.sliceArray(DMX_LEN + 1 + len..DMX_LEN + 1 + len + sz - 1)
                 val e = LogTinyEntry(fid, seq, h, content)
                 Log.d("repo", "Logentry content:${content.toHex()} ")
-                context.wai.sendTinyEventToFrontend(e)
+                //context.wai.sendTinyEventToFrontend(e)
+                context.feedPub.on_rx(e)
                 // File(d,"-"+seq.toString()).createNewFile()
             } else {
                 if (File(d, "-" + seq.toString()).exists()) {
@@ -378,7 +389,8 @@ class Repo(val context: MainActivity) {
                     if (content != null) {
                         Log.d("repo", "Logentry content > 48:${content} ")
                         val e = LogTinyEntry(fid, seq, mid!!, content)
-                        context.wai.sendTinyEventToFrontend(e)
+                        //context.wai.sendTinyEventToFrontend(e)
+                        context.feedPub.on_rx(e)
                     }
                 } else {
                     File(d, "!" + seq.toString()).createNewFile()
@@ -416,7 +428,8 @@ class Repo(val context: MainActivity) {
             val (content,mid) = feed_read_content(b.fid!!, b.seq)
             if (content != null) {
                 val e = LogTinyEntry(b.fid!!, b.seq, mid!!, content)
-                context.wai.sendTinyEventToFrontend(e)
+                //context.wai.sendTinyEventToFrontend(e)
+                context.feedPub.on_rx(e)
             }
         } else { // chain extends, install next chunk handler
             val h = buf.sliceArray(TINYSSB_PKT_LEN - HASH_LEN..buf.lastIndex)

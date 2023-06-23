@@ -50,33 +50,42 @@ ZAP_ROUND_LEN   =   4500
 
 class GOset():
 
-    def __init__(self, node: node.NODE, dmx_str: str =GOSET_DMX_STR, epoch: int = 0,
+    def __init__(self, node, dmx_str: str =GOSET_DMX_STR, epoch: int = 0,
                  add_key_callback: Optional[Callable[[bytes], None]] = None) -> None:
+        self.keys = []
+        self.state = bytearray(util.FID_LEN)
+        self.pending_claims = []
+        self.pending_novelty = deque()
+        self.largest_claim_span = 0
+        self.novelty_credit = 1
+
         self.node = node
         self.dmx_str = dmx_str # for isp: dmx_str = GOSET_DMX_STR + contractID
         self.epoch = epoch
         self.is_root_goset = dmx_str == GOSET_DMX_STR
         self.goset_dmx = hashlib.sha256(self.dmx_str.encode() + (epoch.to_bytes() if not self.is_root_goset else b"") ).digest()[:util.DMX_LEN]
+        print("dmx str:", self.goset_dmx.hex())
         self.want_dmx = self.compute_dmx('want'.encode('utf-8') + self.state)
         self.chunk_dmx = self.compute_dmx('blob'.encode('utf-8') + self.state)
         # self.novelt_and_claim_dmx = hashlib.sha256(self.dmx_str.encode()).digest()[:util.DMX_LEN]
         self.node.arm_dmx(self.goset_dmx, lambda pkt, aux: self.rx(pkt))
         self.add_key_callback = add_key_callback
+        
 
-    state = bytearray(util.FID_LEN)
-    keys = []
-    pending_claims = []
-    pending_novelty = deque()
-    largest_claim_span = 0
-    novelty_credit = 1
+    # state = bytearray(util.FID_LEN)
+    # pending_claims = []
+    # pending_novelty = deque()
+    # largest_claim_span = 0
+    # novelty_credit = 1
 
-    def loop(self) -> None:
-        while True:
-            self.beacon()
-            time.sleep(GOSET_ROUND_LEN)
+    # def loop(self) -> None:
+    #     while True:
+    #         self.beacon()
+    #         time.sleep(GOSET_ROUND_LEN)
 
 
     def rx(self, pkt: bytes, aux: Optional[bytes] = None) -> None:
+        print("Goset received", len(pkt))
         
         if len(pkt) <= util.DMX_LEN:
             return
@@ -118,6 +127,7 @@ class GOset():
 
 
     def beacon(self) -> None:
+        print("Beacon called", self.dmx_str)
         if len(self.keys) == 0:
             return
         while(self.novelty_credit > 0 and len(self.pending_novelty) > 0):
@@ -187,14 +197,19 @@ class GOset():
             return False
         print("GOset _include_key", key)
         self.keys.append(key)
+        if self.add_key_callback is not None:
+            print("call callback")
+            self.add_key_callback(key)
         return True
 
 
     def _add_key(self, key: bytes) -> None:
         if not self._include_key(key):
             return
+        
         typ = repo.FEED_TYPE_ROOT if self.is_root_goset else repo.FEED_TYPE_ISP_VIRTUAL
-        self.node.repo.new_feed(key, typ)
+        if not self.node.repo.feed_exists(key):
+            self.node.repo.new_feed(key, typ)
 
         self.keys = sorted(self.keys, key=functools.cmp_to_key(util.byteArrayCmp))
         print("ADDKEY: ", self.keys)
@@ -206,9 +221,6 @@ class GOset():
             elif len(self.pending_novelty) < MAX_PENDING:
                 self.pending_novelty.append(n)
         print("GOSET _add_key(): added key", key)
-
-        if self.add_key_callback is not None:
-            self.add_key_callback(key)
 
 
     def _add_pending_claim(self, cl: Claim) -> None:
@@ -277,7 +289,16 @@ class GOset():
     
     def set_add_key_callback(self, callback: Callable[[bytes], None]) -> None:
         self.add_key_callback = callback
+        print("updated callback")
 
+    def set_epoch(self, new_epoch: int):
+        if new_epoch < self.epoch:
+            raise Exception("GOset epoch can't be decreased")
+        
+        self.node.arm_dmx(self.goset_dmx, None, None) # remove old goset dmx handler
+        self.epoch = new_epoch
+        self.goset_dmx = hashlib.sha256(self.dmx_str.encode() + (self.epoch.to_bytes() if not self.is_root_goset else b"") ).digest()[:util.DMX_LEN]
+        self.node.arm_dmx(self.goset_dmx, lambda pkt, aux: self.rx(pkt))
 
     def update_want_dmx(self) -> None:
         print("update want")
@@ -380,15 +401,16 @@ class GOset():
 
 
 class GOsetManager():
-    def __init__(self, node: node.NODE) -> None:
+    def __init__(self, node) -> None:
         self.sets: set[GOset] = set()
         self.node = node
         self.offs: dict[GOset, int] = {}
 
     def loop(self) -> None:
         while True:
-            self.arq_loop()
+            print("amount of gosets:", len(self.sets))
             for go in self.sets:
+                print("Beacon for", go.dmx_str)
                 go.beacon()
             time.sleep(GOSET_ROUND_LEN)
 
@@ -409,90 +431,7 @@ class GOsetManager():
                 return True
         return False
 
-    def arq_loop(self) -> None:
-        for go in self.sets:
-            v = ""
-            vect = []
-            encoding_len = 0
-            self.offs[go] = (self.offs[go] + 1) % len(go.keys)
-            vect.append(self.offs[go])
-            i = 0
-            while i < len(go.keys):
-                ndx = (self.offs[go] + i) % len(go.keys)
-                key = go.keys[ndx]
-                feed = self.node.repo.fid2rec(key)
-                if feed is None:
-                    continue
-                bptr = feed.next_seq
-                vect.append(bptr)
-
-                dmx = go.compute_dmx(key + bptr.to_bytes(4, 'big') + feed.prev_hash)
-                print("arm", dmx.hex(), f"for {key.hex()}.{bptr}")
-                self.node.arm_dmx(dmx, lambda buf, fid: self.node.incoming_pkt(buf, fid), key)
-                v += ("[ " if len(v) == 0 else ", ") + f'{ndx}.{bptr}'
-                i += 1
-                encoding_len += len(bipf.dumps(bptr))
-                if encoding_len > 100:
-                    break
-
-            self.offs[go] = (self.offs[go] + i) % len(go.keys)
-            if len(vect) > 1:
-                wire = go.want_dmx + bipf.dumps(vect)
-                for f in self.node.faces:
-                    f.enqueue(wire)
-            print(">> sent WANT request", v, "]")
-            
-
-            # TODO CHUNK REQUEST
-
-            chunk_req_list = []
-            for f in os.listdir(self.node.repo.FEED_DIR):
-                if not os.path.isdir(os.path.join(self.node.repo.FEED_DIR, f)) or len(f) != 2* util.FID_LEN:
-                    continue
-                fid = util.fromhex(f)
-                frec = self.node.repo.fid2rec(fid, True)
-                if frec is None:
-                    continue
-                frec.next_seq = self.node.repo.feed_len(fid) + 1
-                for fn in os.listdir(os.path.join(self.node.repo.FEED_DIR, f)):
-                    path = os.path.join(os.path.join(self.node.repo.FEED_DIR, f), fn)
-                    if not fn.startswith("!"):
-                        continue
-                    seq = int(fn[1:])
-                    sz = os.path.getsize(path)
-                    h = bytes(util.HASH_LEN)
-                    if sz == 0:
-                        pkt = self.node.repo.feed_read_pkt(fid, seq)
-                        if pkt is not None:
-                            h = pkt[util.DMX_LEN + 1 + 28:util.DMX_LEN + 1 + 28 + util.HASH_LEN]
-                        else:
-                            seq -= 1
-                    else:
-                        with open(path, "rb") as g:
-                            g.seek(-util.HASH_LEN, 2) # seek from end of file
-                            if g.read(len(h)) != len(h):
-                                seq -= 1
-                            else:
-                                i = 0
-                                while i < util.HASH_LEN:
-                                    if h[i] != 0:
-                                        break
-                                    else:
-                                        i += 1
-                                if i == util.HASH_LEN:
-                                    seq -= 1
-                    
-                    if seq > 0:
-                        next_chunk = sz // util.TINYSSB_PKT_LEN
-                        fidNr = go.keys.index(fid)
-                        lst = [fidNr, seq, next_chunk]
-                        chunk_req_list.append(lst)
-                        self.node.arm_blob(h, lambda pkt, x: self.node.incoming_chainedblob(pkt, x), fid, seq, next_chunk)
-
-            if chunk_req_list:
-                wire = go.chunk_dmx + bipf.dumps(chunk_req_list)
-                for f in self.node.faces:
-                    f.enqueue(wire)
+    
 
 
 

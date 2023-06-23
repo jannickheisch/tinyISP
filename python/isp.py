@@ -38,14 +38,21 @@ class ISP:
         self.node = self.node_setup()
         self.go_set_manager = self.node.goset_manager
         self.whitelist: list[bytes] = []
-        self.node.start()
         self.clients: list[Client] = []
-
-        self.node.goset.adjust_state()
+        
         self.node.goset.set_add_key_callback(self.on_add_key)
 
-        for k in self.node.goset.keys:
-            self.feed_pub.subscribe(k, self.on_tiny_event)
+        for contract in os.listdir(self.ISP_DIR):
+            cl = Client.load_from_file(self, os.path.join(self.ISP_DIR, contract))
+            self.clients.append(cl)
+
+        # test_goset = self.node.goset_manager.add_goset("test")
+        # test_goset._add_key(self.create_new_feed())
+        # test_goset._add_key(self.create_new_feed())
+        # test_goset.adjust_state()
+
+        # for k in self.node.goset.keys:
+        #     self.feed_pub.subscribe(k, self.on_tiny_event)
 
 
         # for log in self.node.repo.listlog():
@@ -53,16 +60,23 @@ class ISP:
 
         self.node.start()
         #self.node.publish_public_content(bipf.dumps(["TAV", "Das ist eine Nachricht die so lange ist, dass sie in mehreren Blobs versendet werden muss", None, int(time.time()/1000)]))
+        self.announce()
         self.loop()
 
     def create_new_feed(self, alias: Optional[str] = None) -> bytes:
-        fid = self.node.ks.new()
+        fid = self.node.ks.new(alias)
         self.node.repo.new_feed(fid, repo.FEED_TYPE_ISP_VIRTUAL)
+        self.node.ks.dump(util.DATA_FOLDER + self.ALIAS + '/_backed/' + self.node.me.hex())
         return fid
 
 
     def on_add_key(self, key: bytes) -> None:
+        print("on_add_key")
+        print("ADDED: ", key.hex())
         self.feed_pub.subscribe(key, self.on_tiny_event)
+
+    def announce(self) -> None:
+        self.node.publish_public_content(Tiny_ISP_Protocol.announce_isp())
 
     def node_setup(self) -> node.NODE:
         os.makedirs(self.ISP_DIR, exist_ok=True)
@@ -101,21 +115,30 @@ class ISP:
         fid = event.fid
         cmd, args = Tiny_ISP_Protocol.from_bipf(event.body)
 
+
+
+        print("cmd:", cmd, "args:", args)
+
         match cmd:
             case Tiny_ISP_Protocol.TYPE_ONBOARDING_REQUEST:
-                if args is None or len(args) != 1:
+                if args is None or len(args) != 2:
                     return
-                self.on_onboarding_request(event.mid, fid, event.mid, args[0])
+                self.on_onboarding_request(event.mid, fid, event.mid, args[1])
 
     def on_onboarding_request(self, ref:bytes, fid: bytes,
                               contract_id: bytes, client_ctr_feed: bytes) -> None:
+        print("received onboarding request")
         if self.whitelist and fid not in self.whitelist:
+            print("Client not in whitelist")
             self.node.publish_public_content(Tiny_ISP_Protocol.onbord_response(ref, False))
             return
 
         if [c for c in self.clients if c.client_id]:
+            print("Client has already an active contract!")
             self.node.publish_public_content(Tiny_ISP_Protocol.onbord_response(ref, False))
             return
+        
+        print("create Client")
 
         cl = Client(self, fid, contract_id, client_ctr_feed)
         self.node.publish_public_content(
@@ -124,7 +147,8 @@ class ISP:
 
     def loop(self):
         while True:
-            time.sleep
+            time.sleep(0.2)
+
     def reset(self) -> None:
         shutil.rmtree(util.DATA_FOLDER)
 

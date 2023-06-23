@@ -46,9 +46,12 @@ class Repo:
         for i, feed in enumerate(self.feeds):
             if feed.fid == fid:
                 return i
-            
+
         return -1
 
+    def feed_exists(self, fid: bytes) -> bool:
+        path = os.path.join(self.FEED_DIR, fid.hex())
+        return os.path.exists(path)
 
     def fid2rec(self, fid: bytes, create_if_needed: bool = False, feed_type: str = FEED_TYPE_ROOT) -> Optional[Feed]:
         feed = next((f for f in self.feeds if f.fid == fid), None)
@@ -122,7 +125,7 @@ class Repo:
         self.root_go_set.adjust_state()
 
 
-    def new_feed(self, fid: bytes, feed_type = FEED_TYPE_ROOT) -> None:
+    def new_feed(self, fid: bytes, feed_type: str = FEED_TYPE_ROOT) -> None:
         fdir = os.path.join(self.FEED_DIR, fid.hex())
         try:
             self.repo_clean(fdir)
@@ -259,9 +262,7 @@ class Repo:
         with self._open_file(fid, "ab") as f:
             f.write(pkt)
         h = hashlib.sha256(buf).digest()[:HASH_LEN]
-        print("change prev from:", self.feeds[ndx].prev_hash.hex(), "to", h)
         self.feeds[ndx].prev_hash = h
-        print("prev after change",self.feeds[ndx].prev_hash)
         if self.feeds[ndx].next_seq >= 1:
             with self._open_file(fid, "ab", 1) as f:
                 f.write(h)
@@ -305,6 +306,8 @@ class Repo:
         print("sidechain_append()")
         b = self.node.blbt[chunk_indx]
 
+        print("append", b.fid.hex(), b.seq, chunk_indx)
+
         with self._open_file(b.fid, "ab", b.seq, 1) as f:
             f.write(buf)
         i = TINYSSB_PKT_LEN - HASH_LEN - 1
@@ -313,6 +316,7 @@ class Repo:
                 break
             i += 1
         if i == TINYSSB_PKT_LEN:
+            print("sidechain finished")
             fdir = os.path.join(self.FEED_DIR, b.fid.hex())
             os.rename(os.path.join(fdir, f'!{b.seq}'), os.path.join(fdir, f'-{b.seq}'))
             content, mid = self.feed_read_content(b.fid, b.seq)

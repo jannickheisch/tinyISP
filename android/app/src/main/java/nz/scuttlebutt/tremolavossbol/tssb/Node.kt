@@ -47,6 +47,8 @@ class Node(val context: MainActivity) {
         Log.d("node", "beacon") // , stats: |feeds|=" + String(fcnt) + ", |entries|=" + String(ecnt) + ", |blobs|=" + String(bcnt));
 
         for (goset in context.gosetManager.sets) {
+            if(goset.keys.size == 0)
+                continue
 
             var v = ""
             val vect = Bipf.mkList()
@@ -106,10 +108,11 @@ class Node(val context: MainActivity) {
                 context.tinyRepo.FEED_DIR
             )
             val r = context.tinyRepo
-            for (f in fdir.listFiles()) {
+            for (k in goset.keys) {
+                val f = File(fdir, k.toHex())
                 if (!f.isDirectory || f.name.length != 2 * Constants.FID_LEN) continue
                 val fid = f.name.decodeHex()
-                val frec = context.tinyRepo.fid2rec(fid, true)
+                val frec = context.tinyRepo.fid2rec(fid, true, if (goset.is_root_goset) context.tinyRepo.FEED_TYPE_ROOT else context.tinyRepo.FEED_TYPE_ISP_VIRTUAL)
                 frec!!.next_seq = r.feed_len(fid) + 1
                 for (fn in f.listFiles()) {
                     if (fn.name[0] != '!')

@@ -21,6 +21,8 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import com.google.zxing.integration.android.IntentIntegrator
 import nz.scuttlebutt.tremolavossbol.crypto.IdStore
+import nz.scuttlebutt.tremolavossbol.isp.FeedPub
+import nz.scuttlebutt.tremolavossbol.isp.ISP
 import nz.scuttlebutt.tremolavossbol.tssb.ble.BlePeers
 import nz.scuttlebutt.tremolavossbol.tssb.*
 import nz.scuttlebutt.tremolavossbol.tssb.ble.BlePeersBroadcast
@@ -42,9 +44,10 @@ class MainActivity : Activity() {
     lateinit var tinyIO: IO
     val tinyNode = Node(this)
     val tinyRepo = Repo(this)
+    val feedPub = FeedPub()
     val gosetManager = GoSetManager(this)
     val tinyDemux = Demux(this)
-    val tinyGoset = GOset(this)
+    val tinyGoset = GOset(this, {key: ByteArray -> feedPub.subscribe(key, {entry: LogTinyEntry ->  wai.sendTinyEventToFrontend(entry) })})
     var settings: Settings? = null
     @Volatile var mc_group: InetAddress? = null
     @Volatile var mc_socket: MulticastSocket? = null
@@ -55,6 +58,7 @@ class MainActivity : Activity() {
     var broadcastReceiver: BroadcastReceiver? = null
     var isWifiConnected = false
     var ble_event_listener: BluetoothEventListener? = null
+    val ispList = ArrayList<ISP>()
 
     /*
     var broadcast_socket: DatagramSocket? = null
@@ -96,9 +100,6 @@ class MainActivity : Activity() {
         tinyGoset._include_key(idStore.identity.verifyKey) // make sure our local key is in
         tinyRepo.repo_load()
         gosetManager.add_goset(tinyGoset)
-        tinyDemux.arm_dmx(tinyGoset.goset_dmx,  {buf:ByteArray, aux:ByteArray?, _ -> tinyGoset.rx(buf,aux)}, null)
-        tinyDemux.arm_dmx(tinyDemux.want_dmx[tinyGoset]!!, {buf:ByteArray, aux:ByteArray?, sender:String? -> tinyGoset.incoming_want_request(buf,aux,sender)})
-        tinyDemux.arm_dmx(tinyDemux.chnk_dmx[tinyGoset]!!, { buf:ByteArray, aux:ByteArray?, _ -> tinyGoset.incoming_chunk_request(buf,aux)})
 
         webView.clearCache(true)
         /* no image support in tinyTremola

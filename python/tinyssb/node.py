@@ -9,6 +9,7 @@ import _thread
 from typing import Callable, Optional, Type
 import bipf
 import os
+import time
 
 from .keystore import Keystore
 from . import io, util, repo
@@ -91,8 +92,13 @@ class NODE:  # a node in the tinySSB forwarding fabric
 
         _thread.start_new_thread(self.ioloop.run, tuple())
         # dbg(TERM_NORM, "  starting thread with arq loop")
+        _thread.start_new_thread(self.loop, tuple())
         _thread.start_new_thread(self.goset_manager.loop, tuple())
         #_thread.start_new_thread(self.arq_loop, tuple())
+    def loop(self):
+        while True:
+            self.arq_loop()
+            time.sleep(10)
 
     def dmxt_find(self, dmx: bytes) -> Optional[Dmx]:
         for d in self.dmxt:
@@ -145,14 +151,13 @@ class NODE:  # a node in the tinySSB forwarding fabric
         rc = False
         d = self.dmxt_find(buf[:DMX_LEN])
         if d is not None:
-            print(d.fct)
             d.fct(buf, d.aux)
         if len(buf) == TINYSSB_PKT_LEN:
             b = self.blbt_find(h)
             if b is not None:
                 b.fct(buf, self.blbt.index(b))
                 rc = True
-        print("could not find dmx")
+        # print("could not find dmx")
         return rc
 
 
@@ -164,6 +169,108 @@ class NODE:  # a node in the tinySSB forwarding fabric
         if pkt is None:
             return False
         return self.repo.feed_append(pk, pkt)
+    
+    def arq_loop(self) -> None:
+        i = 1
+        for go in self.goset_manager.sets:
+            if(len(go.keys) == 0):
+                continue
+
+            print("goset", i)
+            v = ""
+            vect = []
+            encoding_len = 0
+            self.goset_manager.offs[go] = (self.goset_manager.offs[go] + 1) % len(go.keys)
+            vect.append(self.goset_manager.offs[go])
+            i = 0
+            while i < len(go.keys):
+                ndx = (self.goset_manager.offs[go] + i) % len(go.keys)
+                key = go.keys[ndx]
+                feed = self.repo.fid2rec(key)
+                if feed is None:
+                    continue
+                bptr = feed.next_seq
+                vect.append(bptr)
+
+                # print("bptr:", bptr)
+                # print("prev:" + feed.prev_hash.hex())
+
+                dmx = go.compute_dmx(key + bptr.to_bytes(4, 'big') + feed.prev_hash)
+                # print("ndx = ", ndx)
+                # print("arm", dmx.hex(), f"for {ndx}.{key.hex()}.{bptr}")
+                self.arm_dmx(dmx, lambda buf, fid: self.incoming_pkt(buf, fid), key)
+                v += ("[ " if len(v) == 0 else ", ") + f'{ndx}.{bptr}'
+                i += 1
+                encoding_len += len(bipf.dumps(bptr))
+                if encoding_len > 100:
+                    break
+
+            self.goset_manager.offs[go] = (self.goset_manager.offs[go] + i) % len(go.keys)
+            if len(vect) > 1:
+                wire = go.want_dmx + bipf.dumps(vect)
+                for f in self.faces:
+                    f.enqueue(wire)
+            print(">> sent WANT request", v, "]")
+            
+
+            # TODO CHUNK REQUEST
+
+            chunk_req_list = []
+            for k in go.keys:
+                f = os.path.join(self.repo.FEED_DIR, k.hex())
+                f_name = os.path.basename(f)
+                if not os.path.isdir(f) or len(f_name) != 2* util.FID_LEN:
+                    continue
+                fid = k
+                frec = self.repo.fid2rec(fid, True, repo.FEED_TYPE_ROOT if go.is_root_goset else repo.FEED_TYPE_ISP_VIRTUAL)
+                if frec is None:
+                    continue
+                frec.next_seq = self.repo.feed_len(fid) + 1
+                for fn in os.listdir(f):
+                    path = os.path.join(f, fn)
+                    if not fn.startswith("!"):
+                        continue
+                    print("request fn", fn)
+                    seq = int(fn[1:])
+                    sz = os.path.getsize(path)
+                    print("sz", sz)
+                    h = bytes(util.HASH_LEN)
+                    if sz == 0:
+                        pkt = self.repo.feed_read_pkt(fid, seq)
+                        if pkt is not None:
+                            h = pkt[util.DMX_LEN + 1 + 28:util.DMX_LEN + 1 + 28 + util.HASH_LEN]
+                        else:
+                            seq -= 1
+                    else:
+                        print("path:", path)
+                        with open(path, "rb") as g:
+                            g.seek(-util.HASH_LEN, 2) # seek from end of file
+                            if len(g.read(len(h))) != len(h):
+                                print("read missmatch")
+                                seq -= 1
+                            else:
+                                i = 0
+                                while i < util.HASH_LEN:
+                                    if h[i] != 0:
+                                        break
+                                    else:
+                                        i += 1
+                                if i == util.HASH_LEN:
+                                    seq -= 1
+                    
+                    if seq > 0:
+                        next_chunk = sz // util.TINYSSB_PKT_LEN
+                        fidNr = go.keys.index(fid)
+                        lst = [fidNr, seq, next_chunk]
+                        chunk_req_list.append(lst)
+                        self.arm_blob(h, lambda pkt, x: self.incoming_chainedblob(pkt, x), fid, seq, next_chunk)
+            print("send CHNK request:", chunk_req_list)
+            if chunk_req_list:
+                wire = go.chunk_dmx + bipf.dumps(chunk_req_list)
+                for f in self.faces:
+                    f.enqueue(wire)
+
+            i += 1
 
     # ----------------------------------------------------------------------
 

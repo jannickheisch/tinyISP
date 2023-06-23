@@ -8,6 +8,7 @@ class FeedPub:
         self.subscriptions: dict[bytes, list[Callable]] = {}
 
     def subscribe(self, fid: bytes, callback: Callable[[repo.LogTinyEntry], Any]) -> None:
+        print("subscribed: ", fid.hex())
         if fid in self.subscriptions:
             self.subscriptions[fid].append(callback)
         else:
@@ -18,6 +19,7 @@ class FeedPub:
             self.subscriptions[fid].remove(callback)
 
     def on_rx(self, entry: repo.LogTinyEntry) -> None:
+        print("feedpub received")
         fid = entry.fid
         if fid in self.subscriptions:
             for c in self.subscriptions[fid]:

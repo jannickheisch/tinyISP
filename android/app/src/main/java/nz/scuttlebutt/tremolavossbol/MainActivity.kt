@@ -29,6 +29,7 @@ import nz.scuttlebutt.tremolavossbol.tssb.ble.BlePeersBroadcast
 import nz.scuttlebutt.tremolavossbol.tssb.ble.BluetoothEventListener
 import nz.scuttlebutt.tremolavossbol.utils.Constants
 import tremolavossbol.R
+import java.io.File
 import java.net.*
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
@@ -86,7 +87,7 @@ class MainActivity : Activity() {
         // tremolaState = TremolaState(this)
         idStore = IdStore(this)
 
-
+        feedPub.subscribe(idStore.identity.verifyKey, { entry -> wai.sendTinyEventToFrontend(entry) })
         // wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
         // mlock = wifiManager?.createMulticastLock("lock")
         // if (!mlock!!.isHeld) mlock!!.acquire()
@@ -97,9 +98,17 @@ class MainActivity : Activity() {
         val webView = findViewById<WebView>(R.id.webView)
         wai = WebAppInterface(this, webView)
         tinyIO = IO(this, wai)
-        tinyGoset._include_key(idStore.identity.verifyKey) // make sure our local key is in
+        //tinyGoset._include_key(idStore.identity.verifyKey) // make sure our local key is in
         tinyRepo.repo_load()
-        gosetManager.add_goset(tinyGoset)
+        // gosetManager.add_goset(tinyGoset)
+
+        val ispDir = File(getDir(Constants.TINYSSB_DIR, MODE_PRIVATE), "isp")
+        if (ispDir.exists())
+            for (f in ispDir.listFiles()) {
+                val path = File(File(getDir(Constants.TINYSSB_DIR, MODE_PRIVATE), "isp"), f.name)
+                val isp = ISP.load_from_file(this, path)
+                ispList.add(isp)
+            }
 
         webView.clearCache(true)
         /* no image support in tinyTremola
@@ -226,10 +235,12 @@ class MainActivity : Activity() {
         val t4 = thread(isDaemon=true) {
             tinyIO!!.mcReceiverLoop(ioLock)
         }
+        /*
         val t5 = thread(isDaemon=true) {
             //tinyGoset.loop()
-            gosetManager.loop()
+            //gosetManager.loop()
         }
+        */
         val t6 = thread(isDaemon=true) {
             tinyNode.loop(ioLock)
         }
@@ -243,7 +254,7 @@ class MainActivity : Activity() {
 
         t3.priority = 8
         t4.priority = 10
-        t5.priority = 8
+        //t5.priority = 8
         t6.priority = 8
 
     }

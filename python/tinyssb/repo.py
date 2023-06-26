@@ -94,6 +94,9 @@ class Repo:
     def repo_reset(self) -> None:
         self.repo_clean(self.FEED_DIR)
 
+    def remove_feed(self, fid: bytes) -> None:
+        self.repo_clean(os.path.join(self.FEED_DIR, fid.hex()))
+
     def repo_load(self) -> None:
         for f in os.listdir(self.FEED_DIR):
             path = os.path.join(self.FEED_DIR, f)
@@ -120,17 +123,24 @@ class Repo:
                     frec.prev_hash = f.read()
 
         for f in self.feeds:
-            if f.type == FEED_TYPE_ROOT:
-                self.root_go_set._include_key(f.fid)
-        self.root_go_set.adjust_state()
+            if f.type == FEED_TYPE_ROOT and f.fid != self.node.me:
+                go = self.node.goset_manager.add_goset(add_key_callback=lambda key: self.node.isp.feed_pub.subscribe(key, self.node.isp.on_tiny_event))
+                go._include_key(f.fid)
+                go._include_key(self.node.me)
+                go.adjust_state()
+        # self.root_go_set.adjust_state()
 
 
     def new_feed(self, fid: bytes, feed_type: str = FEED_TYPE_ROOT) -> None:
         fdir = os.path.join(self.FEED_DIR, fid.hex())
-        try:
-            self.repo_clean(fdir)
-        except:
-            pass
+
+        if self.feed_exists(fid):
+            return
+        
+        # try:
+        #     self.repo_clean(fdir)
+        # except:
+        #     pass
         os.makedirs(fdir, exist_ok=True)
         with open(os.path.join(fdir, feed_type), "w+"):
             pass

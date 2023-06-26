@@ -9,7 +9,7 @@ class FeedPub:
 
     def subscribe(self, fid: bytes, callback: Callable[[repo.LogTinyEntry], Any]) -> None:
         print("subscribed: ", fid.hex())
-        if fid in self.subscriptions:
+        if fid in self.subscriptions and callback not in self.subscriptions[fid]:
             self.subscriptions[fid].append(callback)
         else:
             self.subscriptions[fid] = [callback]

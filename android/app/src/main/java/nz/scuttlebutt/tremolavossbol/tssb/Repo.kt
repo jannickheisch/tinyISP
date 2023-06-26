@@ -11,6 +11,7 @@ import nz.scuttlebutt.tremolavossbol.utils.Bipf.Companion.varint_encode
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.DMX_LEN
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.DMX_PFX
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.FID_LEN
+import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.GOSET_DMX_STR
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.HASH_LEN
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.PKTTYPE_chain20
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.PKTTYPE_plain48
@@ -98,12 +99,16 @@ class Repo(val context: MainActivity) {
         return RandomAccessFile(f, mode)
     }
 
-    fun repo_clean(dir: File) {
+    fun repo_clean(dir: File, deleteFolder: Boolean = false) {
         for (f in dir.listFiles()) {
             if (f.isDirectory)
                 repo_clean(File(dir, f.name))
             f.delete()
         }
+
+        if (deleteFolder)
+            dir.delete()
+
     }
 
     fun repo_reset() {
@@ -153,12 +158,14 @@ class Repo(val context: MainActivity) {
         // and therefore we need to compute a new message id, create a new file with a seq nr suffix
         // ... while ((feeds[ndx].max_prev_seq+1) < feeds[ndx].next_seq) .. compute missing prev values, cycle files
 
+        /*
         for (f in feeds) {
             Log.d("repo", "loaded feed ${f.fid.toHex()}")
             if (f.feed_type == FEED_TYPE_ROOT)
                 context.tinyGoset._include_key(f.fid)
         }
-        context.tinyGoset.adjust_state()
+        */
+        //context.tinyGoset.adjust_state()
     }
 
     fun feed_exists(fid: ByteArray): Boolean {
@@ -166,6 +173,7 @@ class Repo(val context: MainActivity) {
         val ldir = File(fdir, fid.toHex())
         return ldir.exists()
     }
+
 
     fun new_feed(fid: ByteArray, feed_type: String = FEED_TYPE_ROOT) {
         Log.d("repo", "create empty log")

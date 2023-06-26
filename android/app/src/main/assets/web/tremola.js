@@ -49,6 +49,7 @@ function menu_new_conversation() {
 }
 
 function menu_new_contact() {
+    qr_scan_isp = false
     document.getElementById('new_contact-overlay').style.display = 'initial';
     document.getElementById('overlay-bg').style.display = 'initial';
     // document.getElementById('chat_name').focus();
@@ -800,9 +801,8 @@ function resetTremola() { // wipes browser-side content
         "settings": get_default_settings(),
         "board": {},
         "isp": {
-            "announcements": [],
-            "pending": [],
-            "subscribed": []
+            "requested": {},
+            "established": {}
         }
     }
     var n = recps2nm([myId])
@@ -1036,6 +1036,28 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
         } else if (e.public[0] == "ISP") {
             var cmd = e.public[1]
             switch (cmd) {
+                case ISP_TYPE_ONBOARD_REQUEST:
+                    if (e.header.fid == myId) {
+                        var ispID = "@" + e.public[2] + ".ed25519";
+                        if (!(ispID in tremola.isp.requested)) {
+                            tremola.isp.requested[ispID] = e.header.ref
+                            console.log("added requested")
+                        }
+                        load_isp_list()
+                    }
+
+                    break
+                case ISP_TYPE_ONBOARD_RESPONSE:
+                    if (e.header.fid in tremola.isp.requested && tremola.isp.requested[e.header.fid] == e.public[2]) {
+                        delete tremola.isp.requested[e.header.fid]
+                        tremola.isp.established[e.header.fid] = {
+                            "subscriptions": []
+                        }
+                        load_isp_list()
+                    }
+
+
+                /*
                 case ISP_TYPE_ANNOUNCEMENT:
                     console.log("received isp announcement")
                     if (!tremola.isp.announcements.includes(e.header.fid)) {
@@ -1045,6 +1067,7 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
                     }
 
                     break
+                */
             }
         }
         persist();
@@ -1111,6 +1134,7 @@ function b2f_initialize(id) {
     load_chat_list()
     load_contact_list()
     load_board_list()
+    load_isp_list()
 
     closeOverlay();
     setScenario('chats');

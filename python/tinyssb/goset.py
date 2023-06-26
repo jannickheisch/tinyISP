@@ -216,7 +216,7 @@ class GOset():
         if len(self.keys) >= self.largest_claim_span:
             n = self._mk_novelty_from_key(key)
             if self.novelty_credit > 0:
-                self._enqueue(n.wire, self.goset_dmx)
+                #self._enqueue(n.wire, self.goset_dmx)
                 self.novelty_credit -= 1
             elif len(self.pending_novelty) < MAX_PENDING:
                 self.pending_novelty.append(n)
@@ -290,6 +290,15 @@ class GOset():
     def set_add_key_callback(self, callback: Callable[[bytes], None]) -> None:
         self.add_key_callback = callback
         print("updated callback")
+
+    def remove_key(self, key: bytes):
+        self.node.arm_dmx(self.goset_dmx, None, None)
+        self.keys.remove(key)
+        self.epoch = self.epoch + 1
+        self.goset_dmx = hashlib.sha256(self.dmx_str.encode() + (self.epoch.to_bytes() if not self.is_root_goset else b"") ).digest()[:util.DMX_LEN]
+        self.node.arm_dmx(self.goset_dmx, lambda pkt, aux: self.rx(pkt))
+
+
 
     def set_epoch(self, new_epoch: int):
         if new_epoch < self.epoch:

@@ -52,7 +52,8 @@ class Chunk:
 
 class NODE:  # a node in the tinySSB forwarding fabric
 
-    def __init__(self, faces: list[Type[io.FACE]], keystore: Keystore, me: bytes, callback: Optional[Callable[[repo.LogTinyEntry], None]] = None):
+    def __init__(self, isp, faces: list[Type[io.FACE]], keystore: Keystore, me: bytes, callback: Optional[Callable[[repo.LogTinyEntry], None]] = None):
+        self.isp = isp
         from . import goset
         self.faces = faces
         self.ks = keystore
@@ -86,14 +87,13 @@ class NODE:  # a node in the tinySSB forwarding fabric
         #fdir = File(context.getDir(Constants.TINYSSB_DIR, Context.MODE_PRIVATE), context.tinyRepo.FEED_DIR)
         # dbg(TERM_NORM, '  starting thread with IO loop')
         self.repo.repo_load()
-        print(self.me.hex())
 
         #self.arm_dmx(self.goset.goset_dmx,  lambda buf, aux: self.goset.rx(buf, aux))
 
         _thread.start_new_thread(self.ioloop.run, tuple())
         # dbg(TERM_NORM, "  starting thread with arq loop")
         _thread.start_new_thread(self.loop, tuple())
-        _thread.start_new_thread(self.goset_manager.loop, tuple())
+        # _thread.start_new_thread(self.goset.beacon, tuple())
         #_thread.start_new_thread(self.arq_loop, tuple())
     def loop(self):
         while True:

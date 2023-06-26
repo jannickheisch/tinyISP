@@ -33,7 +33,8 @@ var scenarioMenu = {
         ['Connected Devices', 'menu_connection'],
         ['Settings', 'menu_settings'],
         ['About', 'menu_about']],
-    'isp': [['Request Onboarding', 'menu_isp_announcements'],
+    'isp': [['Request Onboarding', 'menu_new_isp_request'],
+        ['Debug', 'isp_debug'],
         ['Connected Devices', 'menu_connection'],
         // ['<del>Force sync</del>', 'menu_sync'],
         ['Settings', 'menu_settings'],
@@ -75,6 +76,8 @@ var scenarioMenu = {
         ['(un)Forget', 'board_toggle_forget'],
         ['Debug', 'ui_debug']]
 }
+
+var qr_scan_isp = false
 
 function onBackPressed() {
     if (overlayIsActive) {
@@ -225,7 +228,7 @@ function closeOverlay() {
     document.getElementById("div:invite_menu").style.display = 'none'
 
     //isp overlays
-    document.getElementById("isp-announcements-overlay").style.display = 'none'
+    document.getElementById("new-isp-overlay").style.display = 'none'
 
     overlayIsActive = false;
 
@@ -266,7 +269,7 @@ function plus_button() {
     } else if (curr_scenario == 'contacts') {
         menu_new_contact();
     } else if (curr_scenario == 'isp') {
-        menu_isp_announcements();
+        menu_new_isp_request();
     } else if (curr_scenario == 'kanban') {
         menu_new_board();
     }
@@ -317,6 +320,7 @@ function qr_scan_start() {
 }
 
 function qr_scan_success(s) {
+    console.log("qr_scan_success", s)
     closeOverlay();
     var t = "did:ssb:ed25519:";
     if (s.substring(0, t.length) == t) {
@@ -332,6 +336,14 @@ function qr_scan_success(s) {
         launch_snackbar("unknown format or invalid identity");
         return;
     }
+
+    if(qr_scan_isp) {
+        console.log("is qr_scan_isp")
+        send_onboardRequest(s)
+        qr_scan_isp = false
+        return
+    }
+
     new_contact_id = s;
     // console.log("tremola:", tremola)
     if (new_contact_id in tremola.contacts) {

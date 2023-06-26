@@ -3,6 +3,7 @@ package nz.scuttlebutt.tremolavossbol.isp
 import android.util.Log
 import androidx.core.graphics.createBitmap
 import nz.scuttlebutt.tremolavossbol.tssb.LogTinyEntry
+import nz.scuttlebutt.tremolavossbol.utils.Bipf
 import nz.scuttlebutt.tremolavossbol.utils.HelperFunctions.Companion.toHex
 
 class FeedPub {
@@ -33,6 +34,7 @@ class FeedPub {
 
     fun on_rx(entry: LogTinyEntry) {
         Log.d("FeedPub", "recieved Tiny Log entry,  ${entry.fid.toHex()}")
+        Log.d("FeedPub", "${ISP.bipf_to_arraylist(Bipf.decode(entry.body)!!)}")
         if (!subscriptions.containsKey(entry.fid.toHex())) {
             Log.d("FeedPub", "feed has no subscriptions:")
             return

@@ -225,6 +225,14 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
 
                 act.tinyNode.publish_public_content(TinyISPProtocol.request_onboarding(isp_feed,client_ctrl_feed.verifyKey))
             }
+            "isp:debug" -> {
+                val isp = act.ispList[0]
+                val lst = Bipf.mkList()
+                Bipf.list_append(lst, Bipf.mkString("Hello"))
+                Bipf.list_append(lst, Bipf.mkString("World"))
+                isp.sendOverData(Bipf.encode(lst)!!)
+
+            }
             else -> {
                 Log.d("onFrontendRequest", "unknown")
             }
@@ -351,9 +359,11 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
                         if (!(lst[3] as Boolean)) {
                             isp.delete()
                             act.ispList.remove(isp)
+                        } else {
+                            val isp_ctrl_feed = Base64.decode(lst[4] as String, Base64.NO_WRAP)
+                            Log.d("wai", "isp accepted request (${isp_ctrl_feed.toHex()}")
+                            isp.add_isp_ctrl_feed(isp_ctrl_feed)
                         }
-                        val isp_ctrl_feed = Base64.decode(lst[4] as String, Base64.NO_WRAP)
-                        isp.add_isp_ctrl_feed(isp_ctrl_feed)
                     }
                 }
             }

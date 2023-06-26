@@ -13,12 +13,12 @@ class TinyISPProtocol {
         const val TYPE_ONBOARDING_RESPONSE = "onboard_response" // The ISP notifies the client if the onboarding was successful, and sends his control feed ISP -> CLient
         const val TYPE_ONBOARDING_ACK = "onboard_ack" // The node acknowledges a successful onboarding and starts any further communication over the control feeds (indicates that this ctrl_feed is active)
 
-        // Data feed
-        const val TYPE_DATA_FEED_ESTABLISH = ""
-        const val TYPE_DATA_FEED_ESTABLISH_ACK =""
-        const val TYPE_DATA_FEED_NEW_ENTRY = ""
-        const val TYPE_DATA_FEED_CONTROL_ACK = ""
-        const val TYPE_DATA_FEED_CONTROL_MISSING = ""
+        // Data feed management
+        const val TYPE_DATA_FEEDHOPPING_PREV = "feedhopping_prev"
+        const val TYPE_DATA_FEEDHOPPING_NEXT = "feedhopping_next"
+        const val TYPE_DATA_FEED_FIN = "feedhopping_fin"
+
+        const val DATA_FEED_MAX_ENTRIES = 4
 
         const val TYPE_DATA_FEED_HOPPING_INITIATE = "" // initiates Feed hopping to a new feed
         const val TYPE_DATA_FEED_HOPPING_ACK = "" // the other party acknowledges the feed Hopping and indicates that it will listen to the new feed
@@ -61,6 +61,18 @@ class TinyISPProtocol {
 
         fun onboard_ack(data_feed: ByteArray): ByteArray {
             return _to_bipf(TYPE_ONBOARDING_ACK, listOf(data_feed))
+        }
+
+        fun data_feed_prev(prev: ByteArray?): ByteArray {
+            return _to_bipf(TYPE_DATA_FEEDHOPPING_PREV, listOf(prev))
+        }
+
+        fun data_feed_next(next: ByteArray): ByteArray {
+            return _to_bipf(TYPE_DATA_FEEDHOPPING_NEXT, listOf(next))
+        }
+
+        fun data_feed_fin(fid: ByteArray): ByteArray {
+            return _to_bipf(TYPE_DATA_FEED_FIN, listOf(fid))
         }
 
         private fun _to_bipf(typ: String, args: List<Any?>? = null): ByteArray {

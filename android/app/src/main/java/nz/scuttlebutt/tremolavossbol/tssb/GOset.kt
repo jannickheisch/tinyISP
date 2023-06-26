@@ -29,7 +29,7 @@ class Novelty {
     var wire = ByteArray(0)
 }
 
-class GOset(val context: MainActivity, val add_key_callback: (ByteArray) -> Unit, val dmx_str: String = GOSET_DMX_STR, val epoch: Int = 0) {
+class GOset(val context: MainActivity, val add_key_callback: ((ByteArray) -> Unit)?, val dmx_str: String = GOSET_DMX_STR, var epoch: Int = 0) {
     /* packet format:
         n 32B 32B? 32B?  // 33 bytes, in the future up to two additional keys
         c 32B 32B 32B B  // 98 bytes
@@ -225,7 +225,8 @@ class GOset(val context: MainActivity, val add_key_callback: (ByteArray) -> Unit
         }
         Log.d("goset","_include_key ${key.toHex()}, keys.size was ${keys.size}")
         keys.add(key)
-        add_key_callback(key)
+
+        add_key_callback?.invoke(key)
         return true
     }
 
@@ -241,7 +242,7 @@ class GOset(val context: MainActivity, val add_key_callback: (ByteArray) -> Unit
         if (keys.size >= largest_claim_span) { // only rebroadcast if we are up to date
             val n = mkNovelty_from_key(key)
             if (novelty_credit-- > 0)
-                context.tinyIO.enqueue(n.wire, goset_dmx, null)
+                //context.tinyIO.enqueue(n.wire, goset_dmx, null)
             else if (pending_novelty.size < MAX_PENDING)
                 pending_novelty.add(n)
         }
@@ -312,6 +313,18 @@ class GOset(val context: MainActivity, val add_key_callback: (ByteArray) -> Unit
         // Log.d("xor", "hi=${keys[hi].toHex()}")
         // Log.d("xor", "xo=${xor.toHex()}")
         return xor
+    }
+
+    fun removeKey(key: ByteArray) {
+        Log.d("GOset", "removed key ${key.toHex()}")
+        context.tinyDemux.arm_dmx(goset_dmx) // remove old handler
+        keys.removeIf { it.contentEquals(key) }
+        epoch++
+        Log.d("GOset", "resulted in ${keys.map { it.toHex() }}")
+        val goset_str = dmx_str + epoch
+        goset_dmx = goset_str.encodeToByteArray().sha256().sliceArray(0..DMX_LEN-1)
+        context.tinyDemux.arm_dmx(goset_dmx, {buf:ByteArray, aux:ByteArray?, _ -> rx(buf,aux)}, null)
+        adjust_state()
     }
 
     fun incoming_want_request(buf: ByteArray, aux: ByteArray?, sender: String?) {
@@ -409,7 +422,7 @@ class GoSetManager(val context: MainActivity) {
     val offs = mutableMapOf<GOset, Int>()
     val GOSET_ROUND_LEN = 10000L
 
-    fun add_goset(add_key_callback: (ByteArray) -> Unit, dmx_str: String, epoch: Int = 0): GOset {
+    fun add_goset(add_key_callback: ((ByteArray) -> Unit)?, dmx_str: String, epoch: Int = 0): GOset {
         val go = GOset(context, add_key_callback, dmx_str, epoch)
         sets.add(go)
         offs[go] = 0

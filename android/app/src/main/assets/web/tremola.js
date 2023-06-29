@@ -277,7 +277,7 @@ function new_text_post(s) {
         recps = "ALL";
         backend("publ:post [] " + btoa(draft) + " null"); //  + recps)
     } else {
-        recps = tremola.chats[curr_chat].members.join(' ');
+        recps = tremola.chats[curr_chat].members[0] == myId ? tremola.chats[curr_chat].members[1].slice(1,-8) : tremola.chats[curr_chat].members[0].slice(1,-8);
         backend("priv:post [] " + btoa(draft) + " null " + recps);
     }
     document.getElementById('draft').value = '';
@@ -298,7 +298,8 @@ function new_voice_post(voice_b64) {
         // recps = "ALL";
         backend("publ:post [] " + draft + " " + voice_b64); //  + recps)
     } else {
-        recps = tremola.chats[curr_chat].members.join(' ');
+        recps = tremola.chats[curr_chat].members[0] == myId ? tremola.chats[curr_chat].members[1].slice(1,-8) : tremola.chats[curr_chat].members[0].slice(1,-8);
+        console.log("priv recp: " + recps)
         backend("priv:post [] " + draft + " " + voice_b64 + " " + recps);
     }
     document.getElementById('draft').value = '';
@@ -822,7 +823,7 @@ function resetTremola() { // wipes browser-side content
         "timeline": new Timeline()
     };
     tremola.contacts[myId] = {"alias": "me", "initial": "M", "color": "#bd7578", "forgotten": false};
-    createBoard('Personal Board', [FLAG.PERSONAL])
+    //createBoard('Personal Board', [FLAG.PERSONAL])
     persist();
 }
 
@@ -1045,16 +1046,21 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
                         }
                         load_isp_list()
                     }
-
                     break
                 case ISP_TYPE_ONBOARD_RESPONSE:
                     if (e.header.fid in tremola.isp.requested && tremola.isp.requested[e.header.fid] == e.public[2]) {
                         delete tremola.isp.requested[e.header.fid]
-                        tremola.isp.established[e.header.fid] = {
-                            "subscriptions": []
+                        if(e.public[3]) {
+                            console.log("moved to established")
+                            tremola.isp.established[e.header.fid] = {
+                                "subscriptions": [],
+                                "pendingSub": [],
+                                "requests": {}
+                            }
                         }
                         load_isp_list()
                     }
+                    break
 
 
                 /*
@@ -1068,6 +1074,44 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
 
                     break
                 */
+            }
+        } else if (e.public[0] == "PTV") {
+            var txt = e.public[1]
+            var voice = e.public[2]
+            var tst = e.public[3]
+            var rcp = "@" + e.public[4] + ".ed25519"
+            var conv_name = recps2nm([myId, (rcp == myId ? e.header.fid : rcp)])
+            console.log("new post PRIVATE ", txt, voice, tst, rcp, conv_name, e.header.fid)
+            if (!(conv_name in tremola.chats)) { // create new conversation if needed
+                console.log("xx")
+                tremola.chats[conv_name] = {
+                    "alias": "Public channel X", "posts": {},
+                    "members": [myId, rcp], "touched": Date.now(), "lastRead": 0,
+                    "timeline": new Timeline()
+                };
+                load_chat_list()
+            }
+            var ch = tremola.chats[conv_name];
+            if (ch.timeline == null)
+                ch["timeline"] = new Timeline();
+            console.log("new post 1 ", ch)
+            if (!(e.header.ref in ch.posts)) { // new post
+                var a = e.public;
+                var p = {
+                    "key": e.header.ref, "from": e.header.fid, "body": txt,
+                    "voice": voice, "when": tst
+                };
+                console.log("new post 2 ", p)
+                console.log("time: ", a[3])
+                ch["posts"][e.header.ref] = p;
+                if (ch["touched"] < e.header.tst)
+                    ch["touched"] = e.header.tst
+                if (curr_scenario == "posts" && curr_chat == conv_name) {
+                    load_chat(conv_name); // reload all messages (not very efficient ...)
+                    ch["lastRead"] = Date.now();
+                }
+                set_chats_badge(conv_name)
+
             }
         }
         persist();

@@ -2,8 +2,8 @@
 import os
 from typing import Optional
 from tinyssb.goset import GOset, GOsetManager
-from tinyssb.repo import LogTinyEntry
-from tinyssb.util import atomic_write, DATA_FOLDER
+from tinyssb.repo import LogTinyEntry, FEED_TYPE_ISP_VIRTUAL
+from tinyssb.util import atomic_write, DATA_FOLDER, TINYSSB_PKT_LEN, DMX_LEN
 from .feed_pub import FeedPub
 from .protocol import Tiny_ISP_Protocol
 from tinyssb.keystore import Keystore
@@ -49,8 +49,12 @@ class Client:
         self.client_prev_data_feed: Optional[bytes] = None
         self.isp_data_feeds: list[bytes] = []
 
+        self.pendingSubs: dict[bytes, bytes] = {} # ref -> c2c_feed
         self.subscriptions = {}
         self.supended_state = {}
+        self.replication_state = {}
+
+        self.buffer = {} # dmx -> pkt
 
 
         # load if called from load_from_file() all stored information
@@ -68,6 +72,37 @@ class Client:
 
         #self.dump()
 
+    def sendToRepo(self, buf: bytes):
+        pkt_dmx = buf[:DMX_LEN]
+
+        if self.isp.node.dmxt_find(pkt_dmx) is None:
+            print("dmx not found -> send to buffer")
+            print("dmx: " + pkt_dmx.hex())
+            self.buffer[pkt_dmx] = buf
+            self._persist()
+            return
+        
+        print("send to rx handler with len", len(buf))
+        for i in range(0, len(buf), TINYSSB_PKT_LEN):
+            print("send slice", i)
+            curr_slice = buf[i: i+TINYSSB_PKT_LEN]
+            self.isp.node.on_rx(curr_slice, None)
+
+        next_pkt_dmx = None
+        for pending in self.buffer:
+            if self.isp.node.dmxt_find(pending) is not None:
+                next_pkt_dmx = pending
+                break
+
+        if next_pkt_dmx is not None:
+            wire = self.buffer[next_pkt_dmx]
+            del self.buffer[next_pkt_dmx]
+            self.sendToRepo(wire)
+        
+        self._persist()
+
+
+
     def on_ctrl_add_key(self, key: bytes) -> None:
         print("on_add_key ISP")
         print("ISP CTRL_GO ADDED: ", key.hex())
@@ -78,16 +113,28 @@ class Client:
         self.isp.feed_pub.subscribe(key, self.on_data_rx)
 
     def on_data_rx(self, event: LogTinyEntry) -> None:
-        print("on_datarx: received", bipf.loads(event.body))
+        try:
+            print("on_datarx: received", bipf.loads(event.body))
+        except:
+            print("on_datarx: received no decodable")
+            pass
         fid = event.fid
         mid = event.mid
-        cmd, args = Tiny_ISP_Protocol.from_bipf(event.body)
+        try:
+            cmd, args = Tiny_ISP_Protocol.from_bipf(event.body)
+        except:
+            cmd, args = (None, None)
 
         if fid != self.client_data_feed:
             return
         
         if cmd is None:
-            return
+            if len(event.body) % TINYSSB_PKT_LEN == 0:
+                print("on_data_rx received tunneled log entry")
+                self.sendToRepo(event.body)
+            else:
+                print("on data rx, tunneled data size not matching")
+
         
         match cmd:
             case Tiny_ISP_Protocol.TYPE_DATA_FEEDHOPPING_PREV:
@@ -118,6 +165,8 @@ class Client:
         mid = event.mid
         cmd, args = Tiny_ISP_Protocol.from_bipf(event.body)
 
+        print("on_ctrl_rx: cmd:", cmd, args)
+
         if fid != self.client_ctrl_feed: # only allow control commands over ctrl feeds
             return
 
@@ -139,6 +188,45 @@ class Client:
                 self._persist()
                 if self.supended_state:
                     self.resume()
+            case Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_REQUEST:
+                cl = next((cl for cl in self.isp.clients if cl.client_id == args[0]), None)
+                if cl is None:
+                    print("could not find client for sub request")
+                    self.publish_over_ctrl(Tiny_ISP_Protocol.forwarded_subscription_response(event.mid, False, None, Tiny_ISP_Protocol.REASON_NOT_FOUND))
+                    return
+                self.pendingSubs[event.mid] = args[1]
+                self.isp.ref_to_client[event.mid] = self
+                cl.publish_over_ctrl(Tiny_ISP_Protocol.forwarded_subscription_request(event.mid, self.client_id, args[1]))
+                self._persist()
+            case Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_RESPONSE:
+                if not args[0] in self.isp.ref_to_client:
+                    print("Response ref not found")
+                    return
+                cl: Client = self.isp.ref_to_client[args[0]]
+                if args[1]:
+                    cl.publish_over_ctrl(Tiny_ISP_Protocol.forwarded_subscription_response(args[0], True, args[2]))
+                    del self.isp.ref_to_client[args[0]]
+                    cl.subscriptions[self.client_id] = [cl.pendingSubs[args[0]], args[2]]
+                    self.subscriptions[cl.client_id] = [args[2], cl.pendingSubs[args[0]]]
+                    self.isp.node.repo.new_feed(cl.pendingSubs[args[0]], FEED_TYPE_ISP_VIRTUAL)
+                    self.isp.node.repo.new_feed(args[2], FEED_TYPE_ISP_VIRTUAL)
+                    self.arm_pkt_dmx(cl.pendingSubs[args[0]])
+                    self.arm_pkt_dmx(args[2])
+                    self.feed_pub.subscribe(self.subscriptions[cl.client_id][0], lambda entry: cl.publish_over_data(self.isp.node.repo.feed_read_pkt_wire(entry.fid, entry.seq)))
+                    self.feed_pub.subscribe(self.subscriptions[cl.client_id][1], lambda entry: self.publish_over_data(self.isp.node.repo.feed_read_pkt_wire(entry.fid, entry.seq)))
+                    del cl.pendingSubs[args[0]]
+                else:
+                    print("REPONSE SEND FALSE")
+                    cl.publish_over_ctrl(Tiny_ISP_Protocol.forwarded_subscription_response(args[0], False, None, Tiny_ISP_Protocol.REASON_REJECTED))
+                    del self.isp.ref_to_client[args[0]]
+                    del cl.pendingSubs[args[0]]
+                self._persist()
+
+    def arm_pkt_dmx(self, fid: bytes):
+        frec = self.isp.node.repo.fid2rec(fid, True, FEED_TYPE_ISP_VIRTUAL)
+        dmx = self.ctrl_goset.compute_dmx(fid + frec.next_seq.to_bytes(4, 'big') + frec.prev_hash)
+        print("arm_pkt_dmx, fid: ", fid.hex(), frec.next_seq, frec.prev_hash, dmx.hex())
+        self.isp.node.arm_dmx(dmx, lambda buf, fid: self.isp.node.incoming_pkt(buf, fid), fid)
 
                 
     
@@ -170,7 +258,8 @@ class Client:
 
     def publish_over_data(self, content: bytes):
         self.isp.node.publish_public_content(content, self.isp_data_feeds[0])
-        print("publish over data len:", self.isp.node.repo.feed_len(self.isp_data_feeds[0]))
+        print("publish over data feed len:", self.isp.node.repo.feed_len(self.isp_data_feeds[0]))
+        print("content len:", len(content))
         if self.isp.node.repo.feed_len(self.isp_data_feeds[0]) == Tiny_ISP_Protocol.DATA_FEED_MAX_ENTRIES - 1:
             if len(self.isp_data_feeds) == 3:
                 self.suspend()
@@ -206,7 +295,9 @@ class Client:
             'isp_data_feeds': self.isp_data_feeds,
             'data_goset_epoch': self.data_goset.epoch,
             'subscriptions': self.subscriptions,
-            'suspended_state': self.supended_state
+            'pendingSubs': self.pendingSubs,
+            'suspended_state': self.supended_state,
+            'buffer': self.buffer
         }
         with atomic_write(path, binary=True) as f:
             f.write(bipf.dumps(data))
@@ -224,8 +315,15 @@ class Client:
         if self.isp_data_feeds is not None:
             self.data_goset._add_key(self.isp_data_feeds[0])
         self.data_goset._add_key(self.client_data_feed)
+        self.data_goset.adjust_state()
         self.subscriptions = data['subscriptions']
         self.supended_state = data['suspended_state']
+        self.pendingSubs = data['pendingSubs']
+        self.buffer = data['buffer']
+        for sub in self.subscriptions.keys():
+            self.arm_pkt_dmx(self.subscriptions[sub][0])
+            self.arm_pkt_dmx(self.subscriptions[sub][1])
+            self.feed_pub.subscribe(self.subscriptions[sub][1], lambda entry: self.publish_over_data(self.isp.node.repo.feed_read_pkt_wire(entry.fid, entry.seq)))
         self.data_goset.adjust_state()
 
     @staticmethod

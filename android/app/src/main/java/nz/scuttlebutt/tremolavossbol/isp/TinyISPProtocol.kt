@@ -3,6 +3,7 @@ package nz.scuttlebutt.tremolavossbol.isp
 import nz.scuttlebutt.tremolavossbol.utils.Bipf
 import nz.scuttlebutt.tremolavossbol.utils.Bipf_e
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_ISP
+import java.security.cert.CertPathValidatorException.BasicReason
 
 
 class TinyISPProtocol {
@@ -16,24 +17,15 @@ class TinyISPProtocol {
         // Data feed management
         const val TYPE_DATA_FEEDHOPPING_PREV = "feedhopping_prev"
         const val TYPE_DATA_FEEDHOPPING_NEXT = "feedhopping_next"
-        const val TYPE_DATA_FEED_FIN = "feedhopping_fin"
+        const val TYPE_DATA_FEED_FIN = "feedhopping_fin" //  confirmation, that the feed hopping was successful and the old feed can now be deleted.
 
-        const val DATA_FEED_MAX_ENTRIES = 4
-
-        const val TYPE_DATA_FEED_HOPPING_INITIATE = "" // initiates Feed hopping to a new feed
-        const val TYPE_DATA_FEED_HOPPING_ACK = "" // the other party acknowledges the feed Hopping and indicates that it will listen to the new feed
-        const val TYPE_DATA_FEED_HOPPING_FIN = "" //  confirmation, that the feed hopping was successful and the old feed can now be deleted.
+        const val DATA_FEED_MAX_ENTRIES = 50
 
         // Subscribing
-        const val TYPE_SUBSCRIPTION_SUBSCRIBE = ""
-        const val TYPE_SUBSCRIPTION_SUBSCRIBE_ACK = ""
-
-        const val TYPE_SUBSCRIPTION_UNSUBSCRIBE = ""
-        const val TYPE_SUBSCRIPTION_UNSUBSCRIBE_ACK = ""
-
-        // Goset Management
-        const val TYPE_GOSET_REMOVE_KEY = ""
-        const val TYPE_GOSET_REMOVE_KEY_ACK = ""
+        const val TYPE_SUBSCRIPTION_REQUEST = "sub_req" // Request a Subscription. This request is forwarded by the ip to the requested client.
+        const val TYPE_SUBSCRIPTION_ISP_REQUEST = "sub_req_isp" // This is the forwarded message of the ISP
+        const val TYPE_SUBSCRIPTION_RESPONSE = "sup_resp" // Response to the request. This response if forwaded by the isp to the requesting client.
+        const val TYPE_SUBSCRIPTION_ISP_RESPONSE = "sub_resp_isp" // This is the forwarded response, or a response of the ISP
 
         // Farewell
         const val TYPE_FAREWELL_INITIATE = ""
@@ -73,6 +65,28 @@ class TinyISPProtocol {
 
         fun data_feed_fin(fid: ByteArray): ByteArray {
             return _to_bipf(TYPE_DATA_FEED_FIN, listOf(fid))
+        }
+
+        fun subscription_request(subscribe_to_id: ByteArray, c2cFid: ByteArray): ByteArray {
+            return _to_bipf(TYPE_SUBSCRIPTION_REQUEST, listOf(subscribe_to_id, c2cFid))
+        }
+
+        fun forwarded_subscription_request(ref: ByteArray, from_fid: ByteArray, c2c_fid: ByteArray): ByteArray {
+            return _to_bipf(TYPE_SUBSCRIPTION_ISP_REQUEST, listOf(ref, from_fid, c2c_fid))
+        }
+
+        fun subscription_response(ref: ByteArray, accepted: Boolean, c2c_fid: ByteArray?): ByteArray {
+            if(accepted && c2c_fid == null)
+                throw Exception("Subscription is accepted, but no c2c-data-feed is given")
+            return _to_bipf(TYPE_SUBSCRIPTION_RESPONSE, listOf(ref, accepted, c2c_fid))
+        }
+
+        fun forwarded_subscription_response(ref: ByteArray, accepted: Boolean, c2c_fid: ByteArray?, reason: String? = null): ByteArray {
+            if(accepted && c2c_fid == null)
+                throw Exception("Subscription is accepted, but no c2c-data-feed is given")
+            if(!accepted && reason == null)
+                throw Exception("The subscription was not accepted, but no reason is given")
+            return _to_bipf(TYPE_SUBSCRIPTION_ISP_RESPONSE, listOf(ref, accepted, c2c_fid ?: reason))
         }
 
         private fun _to_bipf(typ: String, args: List<Any?>? = null): ByteArray {

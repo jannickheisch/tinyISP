@@ -15,22 +15,6 @@ from typing import Any, Optional, Callable, Generator, Type
 
 import qrcode
 
-
-
-class FeedManager:
-
-    def __init__(self) -> None:
-        self.go_set = []
-        self.control_feed_isp_client = None
-        self.control_feed_client_isp = None
-        self.data_feed_isp_client = []
-        self.curr_data_feed_isp_client = None
-        self.data_feed_client_isp = []
-        self.curr_data_feed_isp_client = None
-
-    def send_control_command(self):
-        pass
-
 class ISP:
     ALIAS = "ISP"
 
@@ -41,6 +25,7 @@ class ISP:
         self.go_set_manager = self.node.goset_manager
         self.whitelist: list[bytes] = []
         self.clients: list[Client] = []
+        self.ref_to_client: dict[bytes, Client] = {} # for pending subscriptions
         
         # self.node.goset.set_add_key_callback(self.on_add_key)
 
@@ -138,8 +123,8 @@ class ISP:
             print("Client not in whitelist")
             self.node.publish_public_content(Tiny_ISP_Protocol.onbord_response(ref, False))
             return
-        print([c for c in self.clients if c.client_id])
-        if [c for c in self.clients if c.client_id]:
+        print([c for c in self.clients if c.client_id ==fid])
+        if [c for c in self.clients if c.client_id == fid]:
             print("Client has already an active contract!")
             self.node.publish_public_content(Tiny_ISP_Protocol.onbord_response(ref, False))
             return

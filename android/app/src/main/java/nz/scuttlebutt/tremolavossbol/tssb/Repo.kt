@@ -188,8 +188,8 @@ class Repo(val context: MainActivity) {
         File(ldir, "mid").createNewFile() // create empty log file
         File(ldir, feed_type).createNewFile()
         feeds.add(Feed(fid, feed_type))
-        if(context.isWaiInitialized())
-            context.wai.eval("b2f_new_contact(\"@${fid.toBase64()}.ed25519\")") // notify frontend
+        // if(context.isWaiInitialized())
+        //    context.wai.eval("b2f_new_contact(\"@${fid.toBase64()}.ed25519\")") // notify frontend
     }
 
     fun feed_read_mid(fid: ByteArray, seq: Int): ByteArray? {
@@ -335,9 +335,9 @@ class Repo(val context: MainActivity) {
         }
         // check dmx
         val seq = feeds[ndx].next_seq
-        Log.d("repo", "append seq=${seq}, pkt= ${pkt.toHex()}")
         val nm0 = fid + seq.toByteArray() + feeds[ndx].prev_hash
         val dmx = context.tinyDemux.compute_dmx(nm0)
+        Log.d("repo", "append seq=${seq}, pkt= ${pkt.toHex()}, dmx= ${dmx.toHex()} fid: ${fid.toHex()}")
         if (!pkt.sliceArray(0..DMX_LEN-1).contentEquals(dmx)) { // wrong dmx field
             Log.d("repo", " DMX mismatch")
             return false
@@ -403,6 +403,10 @@ class Repo(val context: MainActivity) {
                 } else {
                     File(d, "!" + seq.toString()).createNewFile()
                     Log.d("repo", "Logentry wait for sidechain ")
+                    val h = pkt.sliceArray(36 until 56)
+                    val fct =
+                        { pkt: ByteArray, x: Int -> context.tinyNode.incoming_chunk(pkt, x) }
+                    context.tinyDemux.arm_blb(h, fct, fid, seq, 0)
                     // and wait until the sidechain has been loaded to announce it to the frontend
                 }
             }
@@ -453,6 +457,33 @@ class Repo(val context: MainActivity) {
         for (i in 0..a.size-1)
             a[i] = kset[i]
         return a
+    }
+
+    // this function assumes, that the log entry and all its chunks are successfully retrieved
+    fun feed_read_pkt_wire(fid: ByteArray, seq: Int): ByteArray? {
+        if (seq < 1)
+            return null
+
+
+        var wire = feed_read_pkt(fid, seq)
+
+        val chunk_file = File(File(File(context.getDir(TINYSSB_DIR, MODE_PRIVATE), FEED_DIR), fid.toHex()), "-" + seq)
+        if (chunk_file.exists()) {
+            Log.d("pkt2wire", "read in chunk")
+            if (wire != null) {
+                wire = wire + chunk_file.readBytes()
+                Log.d("pkt2wire", "size of chunk file: ${chunk_file.readBytes().size}")
+            }
+        }
+        Log.d("repo", "read dmx: ${wire!!.sliceArray(0 until DMX_LEN).toHex()}, total size: ${wire.size}")
+
+        if (wire.size % TINYSSB_PKT_LEN != 0) {
+            Log.d("read_pkt_wire", "invalid size")
+            return null
+        }
+
+        return wire
+
     }
 }
 

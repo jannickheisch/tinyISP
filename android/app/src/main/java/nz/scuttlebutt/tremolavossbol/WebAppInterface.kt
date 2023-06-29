@@ -24,6 +24,7 @@ import nz.scuttlebutt.tremolavossbol.utils.Bipf.Companion.BIPF_LIST
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_ISP
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_TEXTANDVOICE
 import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_KANBAN
+import nz.scuttlebutt.tremolavossbol.utils.Constants.Companion.TINYSSB_APP_PRIVATETEXTVOICE
 import nz.scuttlebutt.tremolavossbol.utils.HelperFunctions.Companion.toBase64
 import nz.scuttlebutt.tremolavossbol.utils.HelperFunctions.Companion.toHex
 import org.json.JSONArray
@@ -142,20 +143,15 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
                 return
             }
             "priv:post" -> { // priv:post tips atob(text) atob(voice) rcp1 rcp2 ...
-                val a = JSONObject(args[1]) as JSONArray
+                val a = JSONArray(args[1])
                 val tips = ArrayList<String>(0)
-                for (i in 0..a.length()-1) {
-                    val s = (a[i] as JSONObject).toString()
-                    Log.d("priv;post", s)
-                    tips.add(s)
-                }
                 var t: String? = null
                 if (args[2] != "null")
                     t = Base64.decode(args[2], Base64.NO_WRAP).decodeToString()
                 var v: ByteArray? = null
                 if (args.size > 3 && args[3] != "null")
                     v = Base64.decode(args[3], Base64.NO_WRAP)
-                private_post_with_voice(tips, t, v, args.slice(4..args.lastIndex))
+                private_post_with_voice(tips, t, v, Base64.decode(args[4], Base64.NO_WRAP))
                 return
             }
             "get:media" -> {
@@ -233,6 +229,21 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
                 isp.sendOverData(Bipf.encode(lst)!!)
 
             }
+            "isp:subscribe" -> {
+                val isp = act.ispList.find { it.ispID.contentEquals(Base64.decode(args[1], Base64.NO_WRAP)) }
+                if (isp == null) {
+                    throw Exception("unknown isp?")
+                }
+                isp.subscribe(Base64.decode(args[2], Base64.NO_WRAP))
+            }
+            "isp:response" -> {
+                val isp = act.ispList.find { it.ispID.contentEquals(Base64.decode(args[1], Base64.NO_WRAP)) }
+                if (isp == null) {
+                    Log.e("unknow_isp", "unknonw: ${Base64.decode(args[1], Base64.NO_WRAP)}")
+                    throw Exception("unknown isp?")
+                }
+                isp.respond_to_request(Base64.decode(args[2], Base64.NO_WRAP), args[3].toBooleanStrict())
+            }
             else -> {
                 Log.d("onFrontendRequest", "unknown")
             }
@@ -275,22 +286,34 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
             act.tinyNode.publish_public_content(body)
     }
 
-    fun private_post_with_voice(tips: ArrayList<String>, text: String?, voice: ByteArray?, rcps: List<String>) {
+    fun private_post_with_voice(tips: ArrayList<String>, text: String?, voice: ByteArray?, rcp: ByteArray) {
         if (text != null)
             Log.d("wai", "post_voice t- ${text}/${text.length}")
         if (voice != null)
             Log.d("wai", "post_voice v- ${voice}/${voice.size}")
         val lst = Bipf.mkList()
-        Bipf.list_append(lst, TINYSSB_APP_TEXTANDVOICE)
+        Bipf.list_append(lst, TINYSSB_APP_PRIVATETEXTVOICE)
         // add tips
         Bipf.list_append(lst, if (text == null) Bipf.mkNone() else Bipf.mkString(text))
         Bipf.list_append(lst, if (voice == null) Bipf.mkNone() else Bipf.mkBytes(voice))
         val tst = Bipf.mkInt((System.currentTimeMillis() / 1000).toInt())
         Log.d("wai", "send time is ${tst.getInt()}")
         Bipf.list_append(lst, tst)
+        Bipf.list_append(lst, Bipf.mkString(rcp.toBase64()))
         val body = Bipf.encode(lst)
-        if (body != null)
+        if (body == null)
+            return
+        Log.d("priv_post", "rcp: ${rcp.toHex()}")
+        val isp = act.ispList.find { it.isSubscribedTo(rcp) }
+        if (isp == null) {
+            Log.d("Privat chat", "send via root")
             act.tinyNode.publish_public_content(body)
+            return
+        }
+
+
+        val res = isp.c2cSendTo(rcp, body)
+        Log.d("Privat chat", "send via c2c $res")
     }
 
     fun kanban(bid: String?, prev: List<String>?, operation: String, args: List<String>?) {

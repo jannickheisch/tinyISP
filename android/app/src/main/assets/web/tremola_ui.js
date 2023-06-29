@@ -232,6 +232,14 @@ function closeOverlay() {
 
     overlayIsActive = false;
 
+    if (!close_isp_context_menu()) {
+            document.getElementById("div:isp_menu").style.display = 'none'
+            curr_isp = null
+    } else {
+        document.getElementById('overlay-bg').style.display = 'initial';
+        overlayIsActive = true;
+    }
+
     if (curr_img_candidate != null) {
         backend('del:blob ' + curr_img_candidate);
         curr_img_candidate = null;

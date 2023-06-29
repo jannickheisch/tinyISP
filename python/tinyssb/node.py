@@ -73,9 +73,10 @@ class NODE:  # a node in the tinySSB forwarding fabric
         
         self.log_offs = 0
         self.callback= callback
+        self.repo.repo_load()
         
     def on_tiny_event(self, tiny_event: repo.LogTinyEntry) -> None:
-        print("received:", tiny_event)
+        print("received:", tiny_event, "from", tiny_event.fid)
         if self.callback is not None:
             self.callback(tiny_event)
 
@@ -86,7 +87,7 @@ class NODE:  # a node in the tinySSB forwarding fabric
             self.repo.new_feed(self.me, repo.FEED_TYPE_ROOT)
         #fdir = File(context.getDir(Constants.TINYSSB_DIR, Context.MODE_PRIVATE), context.tinyRepo.FEED_DIR)
         # dbg(TERM_NORM, '  starting thread with IO loop')
-        self.repo.repo_load()
+        
 
         #self.arm_dmx(self.goset.goset_dmx,  lambda buf, aux: self.goset.rx(buf, aux))
 
@@ -113,6 +114,7 @@ class NODE:  # a node in the tinySSB forwarding fabric
             self.dmxt.remove(d)
             return
         if d is None and fct is not None:
+            print("arm_dmx", dmx.hex())
             d = Dmx(dmx, fct, aux)
             self.dmxt.append(d)
 

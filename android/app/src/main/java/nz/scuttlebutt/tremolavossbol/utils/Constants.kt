@@ -32,6 +32,7 @@ class Constants{
         val TINYSSB_APP_BOX2         = Bipf.mkString("BX2") // bytes
         val TINYSSB_APP_KANBAN       = Bipf.mkString("KAN") // ...
         val TINYSSB_APP_TEXTANDVOICE = Bipf.mkString("TAV") // str bytes int (xref)
+        val TINYSSB_APP_PRIVATETEXTVOICE = Bipf.mkString("PTV") // str bytes int (xref)
         val TINYSSB_APP_TEXT         = Bipf.mkString("TXT") // str int xref
         val TINYSSB_APP_ISP          = Bipf.mkString("ISP")
 

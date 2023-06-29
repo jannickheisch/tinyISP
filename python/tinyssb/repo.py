@@ -171,7 +171,23 @@ class Repo:
             f.seek(TINYSSB_PKT_LEN * (seq-1))
             buf = f.read(TINYSSB_PKT_LEN)
             return buf if len(buf) == TINYSSB_PKT_LEN else None
+        
+    def feed_read_pkt_wire(self, fid: bytes, seq: int) -> Optional[bytes]:
+        if seq < 1:
+            return None
+        
+        buf = self.feed_read_pkt(fid, seq)
 
+        chunk_file = os.path.join(os.path.join(self.FEED_DIR, fid.hex()), f'-{seq}')
+
+        if (os.path.exists(chunk_file)):
+            with open(chunk_file, "rb") as f:
+                buf += f.read()
+
+        print("pkt2wire len=", len(buf))
+
+        return buf
+    
     def feed_read_chunk(self, fid: bytes, seq: int, cnr: int) -> Optional[bytes]:
         try:
             with self._open_file(fid, "rb", seq, 0) as f:
@@ -184,13 +200,16 @@ class Repo:
     def feed_read_content(self, fid: bytes, seq: int) -> tuple[Optional[bytes], Optional[bytes]]:
         logEntry = self.feed_read_pkt(fid, seq)
         if logEntry is None:
+            print("d1")
             return (None, None)
         mid = self.feed_read_mid(fid, seq)
         if mid is None:
+            print("d2")
             return (None, None)
         if logEntry[DMX_LEN] == PKTTYPE_plain48:
             return (logEntry[DMX_LEN + 1: DMX_LEN+1+48], mid)
         if logEntry[DMX_LEN] != PKTTYPE_chain20:
+            print("d3")
             return (None, None)
         (sz, length) = bipf.varint_decode_max(logEntry, DMX_LEN + 1, DMX_LEN + 4)
         if sz <= 28 - length:
@@ -199,12 +218,13 @@ class Repo:
         content = logEntry[DMX_LEN + 1+length: DMX_LEN+1+28]
         with self._open_file(fid, "rb", seq, 0) as sidechain:
             while True:
-                buf = sidechain.read()
+                buf = sidechain.read(TINYSSB_PKT_LEN)
                 if len(buf) != TINYSSB_PKT_LEN:
+                    print("buf has only len of", len(buf), sidechain.name)
                     break
                 content += buf[:TINYSSB_PKT_LEN - HASH_LEN]
-
         if len(content) < sz:
+            print("error, len of content =", len(content), "instead of", sz)
             return (None, None)
         if len(content) == sz:
             return (content, mid)
@@ -219,8 +239,10 @@ class Repo:
         frec = self.fid2rec(fid, False)
         if frec is None:
             return None
+        print("mk_entry, content len:", len(content))
         sz_enc = bytearray(bipf.varint_encoding_length(len(content)))
         bipf.varint_encode(len(content), sz_enc)
+        print("mk_entry, varin_encode:", sz_enc.hex())
         if len(sz_enc) + len(content) <= 28:
             intro = sz_enc + content + bytearray(28 - len(sz_enc) - len(content))
             ptr = bytearray(HASH_LEN)
@@ -241,11 +263,12 @@ class Repo:
                 if length >= len(remaining):
                     remaining = None
                 else:
-                    remaining = remaining[:-len(remaining)]
+                    remaining = remaining[:-length]
             if len(chunks) > 0:
                 chunks.reverse()
-                with self._open_file(fid, "wb", frec.next_seq, 0) as chain:  
+                with self._open_file(fid, "wb", frec.next_seq, 0) as chain:
                     for b in chunks:
+                        print("write len:", len(b))
                         chain.write(b)
         nm0 = fid + frec.next_seq.to_bytes(4, "big") + frec.prev_hash
         dmx = GOset.compute_dmx(nm0)
@@ -254,7 +277,7 @@ class Repo:
     
     def feed_append(self, fid: bytes, pkt: bytes) -> bool:
         ndx = self._feed_index(fid)
-        print("append ndx:", ndx)
+        print("append ndx:", ndx, "fid:", fid.hex())
         if ndx < 0:
             return False
         seq = self.feeds[ndx].next_seq
@@ -281,6 +304,7 @@ class Repo:
             try:
                 os.remove(os.path.join(d,f"+{self.feeds[ndx].next_seq - 1}"))
             except:
+                #print("Problems with removing file in file_append")
                 pass
         self.feeds[ndx].next_seq += 1
 
@@ -290,6 +314,7 @@ class Repo:
         if pkt[DMX_LEN] == PKTTYPE_chain20:
             sz, length = bipf.varint_decode_max(pkt, DMX_LEN + 1, DMX_LEN + 4)
             print("DEBUG")
+            print("feedappend:", sz, length)
             if sz <= 28 - length:
                 content = pkt[DMX_LEN + 1 + length: DMX_LEN + 1 + length + sz]
                 e = LogTinyEntry(fid, seq, h, content)
@@ -298,15 +323,22 @@ class Repo:
             else:
                 if os.path.exists(os.path.join(d, f"-{seq}")):
                     content, mid = self.feed_read_content(fid, seq)
+                    print("feed append content none?")
+                    print("content:", content)
+                    print("mid", mid)
                     if content is not None and mid is not None:
+                        print("feed append no!")
                         e = LogTinyEntry(fid, seq, mid, content)
                         self.node.on_tiny_event(e)
-                        
                 else:
                     with open(os.path.join(d, f"!{seq}"), "w+"):
                         pass
+                    h = pkt[36: 56]
+                    fct = lambda chunk, b_ndx: self.node.incoming_chainedblob(chunk, b_ndx)
+                    self.node.arm_blob(h, fct, fid, seq, 0)
+                    print(f"waiting for sidechain (chnk {seq}.0)...")
         self.node.arm_dmx(pkt[:DMX_LEN]) # remove old dmx 
-        new_dmx = GOset.compute_dmx(fid + self.feeds[ndx].next_seq.to_bytes(4, "big") 
+        new_dmx = GOset.compute_dmx(fid + self.feeds[ndx].next_seq.to_bytes(4, "big")
                                     + self.feeds[ndx].prev_hash)
         self.node.arm_dmx(new_dmx, lambda buf, fid: self.node.incoming_pkt(buf, fid), fid)
         return True
@@ -330,10 +362,15 @@ class Repo:
             fdir = os.path.join(self.FEED_DIR, b.fid.hex())
             os.rename(os.path.join(fdir, f'!{b.seq}'), os.path.join(fdir, f'-{b.seq}'))
             content, mid = self.feed_read_content(b.fid, b.seq)
+            print("Is content none?")
+            print("content:", content)
+            print("mid:", mid)
             if content is not None and mid is not None:
+                print("no")
                 e = LogTinyEntry(b.fid, b.seq, mid, content)
                 self.node.on_tiny_event(e)
         else:
+            print("append sidechain wait for blob")
             h = buf[TINYSSB_PKT_LEN - HASH_LEN:]
             self.node.arm_blob(h, lambda chunk, b_ndx: self.node.incoming_chainedblob(chunk, b_ndx), b.fid, b.seq, b.bnr + 1)
         self.node.arm_blob(b.h)

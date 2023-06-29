@@ -34,7 +34,7 @@ class FeedPub {
 
     fun on_rx(entry: LogTinyEntry) {
         Log.d("FeedPub", "recieved Tiny Log entry,  ${entry.fid.toHex()}")
-        Log.d("FeedPub", "${ISP.bipf_to_arraylist(Bipf.decode(entry.body)!!)}")
+        // Log.d("FeedPub", "${ISP.bipf_to_arraylist(Bipf.decode(entry.body))}")
         if (!subscriptions.containsKey(entry.fid.toHex())) {
             Log.d("FeedPub", "feed has no subscriptions:")
             return

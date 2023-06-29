@@ -22,22 +22,26 @@ class Tiny_ISP_Protocol:
 
     TYPE_DATA_FEEDHOPPING_PREV = "feedhopping_prev" # At the beginning of each datafeed, points to the previous data feed. None if it is the first data feed
     TYPE_DATA_FEEDHOPPING_NEXT = "feedhopping_next" # At the end of each data feed, points to the next data feed for feed hopping. None if this is the last send data feed
-
     TYPE_DATA_FEED_FIN = "feedhopping_fin" # Confirmation, that the feed hopping was successful and that the previous feed can now be safely deleted. Implicitly removes the previous data feed ID from the data goset and increases the epoch of the data goset
-    DATA_FEED_MAX_ENTRIES = 4 # including prev and next message
+    
+    DATA_FEED_MAX_ENTRIES = 50 # including prev and next message
     
     # Subscribing
-    TYPE_SUBSCRIPTION_Request = "" # Request a Subscription. This request is forwarded by the ip to the requested client.
-    TYPE_SUBSCRIPTION_Response = "" # Response to the request. Also forwared by the isp to the requesting client.
+    TYPE_SUBSCRIPTION_REQUEST = "sub_req" # Request a Subscription. This request is forwarded by the ip to the requested client.
+    TYPE_SUBSCRIPTION_ISP_REQUEST = "sub_req_isp" # This is the forwarded message of the ISP
+    TYPE_SUBSCRIPTION_RESPONSE = "sup_resp" # Response to the request. This response if forwaded by the isp to the requesting client.
+    TYPE_SUBSCRIPTION_ISP_RESPONSE = "sub_resp_isp" # This is the forwarded response, or a response of the ISP
+
+    REASON_NOT_FOUND = "not_found"
+    REASON_REJECTED = "rejected"
 
     TYPE_SUBSCRIPTION_UNSUBSCRIBE = ""
     TYPE_SUBSCRIPTION_UNSUBSCRIBE_ACK = ""
 
     # Farewell
     TYPE_FAREWELL_INITIATE = ""
-    TYPE_FAREWELL_INITIATE_ACK = ""
-    TYPE_FAREWELL_FINISHED = ""
-    TYPE_FAREWELL_TERMINATED = ""
+    TYPE_FAREWELL_ACK = ""
+    TYPE_FAREWELL_FIN = ""
     
     # Misc
 
@@ -77,9 +81,28 @@ class Tiny_ISP_Protocol:
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_DATA_FEED_FIN, [feed_id])
     
     @staticmethod
-    def subscription_request(feed_id: bytes) -> bytes:
-        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_Request,  [feed_id])
-
+    def subscription_request(subscribe_to_fid: bytes, c2c_fid: bytes) -> bytes:
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_REQUEST,  [subscribe_to_fid, c2c_fid])
+    
+    @staticmethod
+    def forwarded_subscription_request(ref: bytes, from_fid: bytes, c2c_fid: bytes) -> bytes:
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_ISP_REQUEST, [ref, from_fid, c2c_fid])
+    
+    @staticmethod
+    def subscription_response(ref: bytes, accepted: bool, c2c_fid: Optional[bytearray]) -> bytes:
+        if accepted and c2c_fid is None:
+            raise Exception("Subscription is accepted, but no c2c-data-feed is given")
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_RESPONSE, [ref, accepted, c2c_fid])
+    
+    @staticmethod
+    def forwarded_subscription_response(ref: bytes, accepted: bool, c2c_fid: Optional[bytearray], reason: Optional[str] = None) -> bytes:
+        if accepted and c2c_fid is None:
+            print("Forwarded subscription is accepted, but no c2c-data-feed is given")
+            raise Exception("Forwarded subscription is accepted, but no c2c-data-feed is given")
+        if not accepted and reason is None:
+            print("The subscription was not accepted, but no reason is given")
+            raise Exception("The subscription was not accepted, but no reason is given")
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_ISP_RESPONSE, [ref, accepted, c2c_fid if c2c_fid is not None else reason])
 
 
     @staticmethod

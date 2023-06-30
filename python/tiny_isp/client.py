@@ -1,5 +1,6 @@
 
 import os
+import time
 from typing import Optional
 from tinyssb.goset import GOset, GOsetManager
 from tinyssb.repo import LogTinyEntry, FEED_TYPE_ISP_VIRTUAL
@@ -14,8 +15,7 @@ import bipf
 STATE_ONBOARDING = "onboarding"
 STATE_ESTABLISHED = "established"
 STATE_FAREWELL = "farewell"
-STATE_TERMINATED = "terminated"
-
+STATE_FAREWELL_FIN = "farewell_fin"
 
 
 class Client:
@@ -55,6 +55,8 @@ class Client:
         self.replication_state = {}
 
         self.buffer = {} # dmx -> pkt
+
+        self.farewell_fin_received = False
 
 
         # load if called from load_from_file() all stored information
@@ -148,7 +150,17 @@ class Client:
                 
             case Tiny_ISP_Protocol.TYPE_DATA_FEEDHOPPING_NEXT:
                 if event.seq != Tiny_ISP_Protocol.DATA_FEED_MAX_ENTRIES:
-                    raise Exception(f"Feedhopping next message is not at end of feed, seq = {event.seq}")
+                    next = args[0]
+                    if next is None:
+                        self.isp.feed_pub.unsubscribe(self.client_data_feed, self.on_data_rx)
+                        self.publish_over_ctrl(Tiny_ISP_Protocol.farewell_fin())
+                        self.status = STATE_FAREWELL_FIN
+                        self._persist()
+                        if (self.status == STATE_FAREWELL_FIN and self.farewell_fin_received):
+                            self.terminate()
+                        return
+                    else:
+                        raise Exception(f"Feedhopping next message is not at end of feed, seq = {event.seq}")
                 
                 self.client_prev_data_feed = self.client_data_feed
                 self.client_data_feed = args[0]
@@ -216,11 +228,22 @@ class Client:
                     self.feed_pub.subscribe(self.subscriptions[cl.client_id][1], lambda entry: self.publish_over_data(self.isp.node.repo.feed_read_pkt_wire(entry.fid, entry.seq)))
                     del cl.pendingSubs[args[0]]
                 else:
-                    print("REPONSE SEND FALSE")
                     cl.publish_over_ctrl(Tiny_ISP_Protocol.forwarded_subscription_response(args[0], False, None, Tiny_ISP_Protocol.REASON_REJECTED))
                     del self.isp.ref_to_client[args[0]]
                     del cl.pendingSubs[args[0]]
                 self._persist()
+            case Tiny_ISP_Protocol.TYPE_FAREWELL_INITIATE:
+                if self.status == STATE_ESTABLISHED: # otherwise this node already initiated a farewell
+                    self.publish_over_data(Tiny_ISP_Protocol.data_feed_next(None))
+                    self.status = STATE_FAREWELL
+                    self.publish_over_ctrl(Tiny_ISP_Protocol.farewell_ack())
+                    self.status = STATE_FAREWELL
+                    self._persist()
+            case Tiny_ISP_Protocol.TYPE_FAREWELL_FIN:
+                self.farewell_fin_received = True
+                self._persist()
+                if self.status == STATE_FAREWELL_FIN and self.farewell_fin_received:
+                    self.terminate()
 
     def arm_pkt_dmx(self, fid: bytes):
         frec = self.isp.node.repo.fid2rec(fid, True, FEED_TYPE_ISP_VIRTUAL)
@@ -279,6 +302,37 @@ class Client:
     def resume(self):
         pass
 
+    def start_farewell(self):
+        self.publish_over_ctrl(Tiny_ISP_Protocol.farewell_init())
+        self.publish_over_data(Tiny_ISP_Protocol.data_feed_next(None))
+        self.status = STATE_FAREWELL
+        self._persist()
+
+    def terminate(self):
+        time.sleep(10)
+        self.go_set_manager.remove_goset(self.data_goset)
+        self.go_set_manager.remove_goset(self.ctrl_goset)
+
+        self.isp.clients.remove(self)
+        self.feed_pub.unsubscribe_from_all(self.client_ctrl_feed)
+        self.isp.node.repo.remove_feed(self.client_ctrl_feed)
+
+        self.feed_pub.unsubscribe_from_all(self.isp_ctrl_feed)
+        self.isp.node.repo.remove_feed(self.isp_ctrl_feed)
+
+        self.feed_pub.unsubscribe_from_all(self.client_data_feed)
+        self.isp.node.repo.remove_feed(self.client_data_feed)
+
+        for fid in self.isp_data_feeds:
+            self.feed_pub.unsubscribe_from_all(fid)
+            self.isp.node.repo.remove_feed(fid)
+
+        # c2c feeds are not removed
+        try:
+            os.remove(os.path.join(self.isp.ISP_DIR, self.contract_id.hex()))
+        except:
+            pass
+
     
     def _persist(self) -> None:
         self.dump(os.path.join(self.isp.ISP_DIR, self.contract_id.hex()))
@@ -297,13 +351,15 @@ class Client:
             'subscriptions': self.subscriptions,
             'pendingSubs': self.pendingSubs,
             'suspended_state': self.supended_state,
-            'buffer': self.buffer
+            'buffer': self.buffer,
+            'farewell_fin_received': self.farewell_fin_received
         }
         with atomic_write(path, binary=True) as f:
             f.write(bipf.dumps(data))
 
     def load(self, data):
         self.status = data['status']
+        self.farewell_fin_received = data['farewell_fin_received']
         self.isp_ctrl_feed =  data['isp_ctrl_feed']
         self.ctrl_goset._add_key(self.isp_ctrl_feed)
         self.ctrl_goset.adjust_state()
@@ -312,9 +368,10 @@ class Client:
         self.client_prev_data_feed = data['client_prev_data_feed']
         if data['data_goset_epoch'] != 0:
             self.data_goset.set_epoch(data['data_goset_epoch'])
-        if self.isp_data_feeds is not None:
+        if self.isp_data_feeds:
             self.data_goset._add_key(self.isp_data_feeds[0])
-        self.data_goset._add_key(self.client_data_feed)
+        if self.client_data_feed:
+            self.data_goset._add_key(self.client_data_feed)
         self.data_goset.adjust_state()
         self.subscriptions = data['subscriptions']
         self.supended_state = data['suspended_state']

@@ -19,6 +19,10 @@ class FeedPub:
         if callback in self.subscriptions[fid]:
             self.subscriptions[fid].remove(callback)
 
+    def unsubscribe_from_all(self, fid:bytes):
+        if fid in self.subscriptions:
+            del self.subscriptions[fid]
+
     def on_rx(self, entry: repo.LogTinyEntry) -> None:
         print("feedpub received")
         try:

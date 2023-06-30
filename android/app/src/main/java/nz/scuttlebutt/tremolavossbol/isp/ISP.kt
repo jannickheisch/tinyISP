@@ -25,11 +25,14 @@ import java.io.File
 const val STATE_ONBOARD_REQUESTED = "onboard_requested"
 const val STATE_ONBOARD_ACK = "onboard_ack"
 const val STATE_ESTABLISHED = "established"
+const val STATE_FAREWELL = "farewell"
+const val STATE_FAREWELL_FIN = "farewell_fin"
 
 
 class ISP {
 
 
+    private var farewell_fin_received: Boolean
     private var buffer: MutableMap<String, ByteArray>
     private var receivedRequests: MutableMap<String, Pair<ByteArray, ByteArray>>
     private var pendingSubRequests: MutableMap<String, ByteArray>
@@ -87,6 +90,8 @@ class ISP {
         this.receivedRequests = mutableMapOf<String, Pair<ByteArray, ByteArray>>() // rootFID.toHex(): (ref, c2c_feed)
 
         this.state = STATE_ONBOARD_REQUESTED
+
+        this.farewell_fin_received = false
         persist()
     }
 
@@ -200,6 +205,24 @@ class ISP {
                     persist()
                 }
             }
+            TinyISPProtocol.TYPE_FAREWELL_INITIATE -> {
+                if (state == STATE_ESTABLISHED) { // otherwise this node already initiated a farewell
+                    sendOverData(TinyISPProtocol.data_feed_next(null))
+                    sendOverCtrl(TinyISPProtocol.farewell_ack())
+                    state = STATE_FAREWELL
+                    persist()
+                    context.wai.eval("b2f_isp_farewell(\"" + ispID.toBase64() +"\")")
+                }
+
+
+            }
+            TinyISPProtocol.TYPE_FAREWELL_FIN -> {
+                farewell_fin_received = true
+                persist()
+                Log.d("farewell_rec", "state: $state, $farewell_fin_received")
+                if (farewell_fin_received && state == STATE_FAREWELL_FIN)
+                    terminate()
+            }
         }
     }
 
@@ -222,12 +245,14 @@ class ISP {
     fun on_data_rx(entry: LogTinyEntry) {
         Log.d("on data feed", "received: ${bipf_to_arraylist(Bipf.decode(entry.body))}, from ${entry.fid.toHex()}, expected: ${isp_data_feed?.toHex()}")
 
+        Log.d("on data feed", "debug1")
         if(!entry.fid.contentEquals(isp_data_feed))
             return
-
+        Log.d("on data feed", "debug2")
         val buf = Bipf.decode(entry.body)
-
-        if (buf == null) {
+        Log.d("on data feed", "debug3, buf: $buf")
+        val lst = bipf_to_arraylist(buf)
+        if (lst == null) {
             if(entry.body.size % TINYSSB_PKT_LEN == 0) {
                 Log.d("on_data_rx", "received tunneld logentry")
                 sendToRepo(entry.body)
@@ -237,9 +262,10 @@ class ISP {
             return
 
         }
+        Log.d("on data feed", "debug3")
 
-        val lst = bipf_to_arraylist(buf)
-        if (lst == null || lst.size < 2)
+
+        if (lst.size < 2)
             return
 
         if (lst[0] != "ISP")
@@ -255,9 +281,23 @@ class ISP {
             }
             TinyISPProtocol.TYPE_DATA_FEEDHOPPING_NEXT -> {
                 Log.d("Feedhopping", "received next")
-                if (entry.seq != TinyISPProtocol.DATA_FEED_MAX_ENTRIES)
-                    throw Exception("Feedhopping next message is not at end of feed")
 
+                if(entry.seq != TinyISPProtocol.DATA_FEED_MAX_ENTRIES) {
+                    val next = lst[2] as ByteArray?
+                    if(next == null) {
+                        Log.d("farewll", "reached end of data feed")
+                        context.feedPub.unsubscribe(isp_data_feed!!, { entry: LogTinyEntry ->  on_ctrl_rx(entry) })
+                        sendOverCtrl(TinyISPProtocol.farewell_fin())
+                        state = STATE_FAREWELL_FIN
+                        persist()
+                        Log.d("farewell_rec", "state: $state, $farewell_fin_received")
+                        if (state == STATE_FAREWELL_FIN && farewell_fin_received)
+                            terminate()
+                        return
+                    } else {
+                        throw Exception("Feedhopping next message is not at end of feed")
+                    }
+                }
                 isp_prev_data_feed = isp_data_feed
                 isp_data_feed = lst[2] as ByteArray
                 context.feedPub.unsubscribe(isp_data_feed!!, { entry: LogTinyEntry ->  on_ctrl_rx(entry) })
@@ -314,10 +354,11 @@ class ISP {
             context.tinyRepo.new_feed(receivedRequests[from_fid.toHex()]!!.second, context.tinyRepo.FEED_TYPE_ISP_VIRTUAL)
             arm_c2c_dmx(receivedRequests[from_fid.toHex()]!!.second)
             context.feedPub.subscribe(receivedRequests[from_fid.toHex()]!!.second, { entry -> c2c_to_frontend(entry) })
+            context.feedPub.subscribe(c2c_feed, { entry -> c2c_to_frontend(entry) })
+            context.feedPub.subscribe(c2c_feed, { entry -> sendOverData(context.tinyRepo.feed_read_pkt_wire(entry.fid, entry.seq)!!)})
             subscriptions[from_fid.toHex()] = arrayListOf(c2c_feed, receivedRequests[from_fid.toHex()]!!.second)
             sendOverCtrl(TinyISPProtocol.subscription_response(receivedRequests[from_fid.toHex()]!!.first, true, c2c_feed))
             receivedRequests.remove(from_fid.toHex())
-            // TODO inform frontend
         } else {
             sendOverCtrl(TinyISPProtocol.subscription_response(receivedRequests[from_fid.toHex()]!!.first, false, null))
             receivedRequests.remove(from_fid.toHex())
@@ -327,7 +368,7 @@ class ISP {
 
     fun isSubscribedTo(fid: ByteArray): Boolean {
         if (subscriptions.containsKey(fid.toHex())) {
-            Log.d("isSubscribed?", "${fid.toHex()} not in list ${subscriptions.keys}")
+            Log.d("isSubscribed?", "${fid.toHex()} in list ${subscriptions.keys}")
             if(subscriptions[fid.toHex()]!!.size == 2)
                 return true
         }
@@ -392,6 +433,8 @@ class ISP {
     }
 
     fun sendOverData(buf: ByteArray) {
+        if (state == STATE_FAREWELL || state == STATE_FAREWELL_FIN) // dont send new data if in farewell phase
+            return
         val pkt = context.tinyRepo.mk_contentLogEntry(buf, client_data_feeds.first())
         if (pkt == null) return
         context.tinyRepo.feed_append(client_data_feeds.first(), pkt)
@@ -415,13 +458,58 @@ class ISP {
     }
 
     fun suspend() {
-
+        //
     }
 
     fun resume() {
 
     }
 
+    fun startFarewell() {
+        sendOverCtrl(TinyISPProtocol.farewell_init())
+        sendOverData(TinyISPProtocol.data_feed_next(null))
+        state = STATE_FAREWELL
+        state = STATE_FAREWELL
+        persist()
+        context.wai.eval("b2f_isp_farewell(\"" + ispID.toBase64() +"\")")
+    }
+
+    fun terminate() {
+        Thread.sleep(5000) // give time for replicating FIN before deleting feed
+        if (state !=  STATE_FAREWELL_FIN || !farewell_fin_received) {
+            Log.e("terminate", "not all requirements are met")
+            return
+        }
+        Log.d("terminate", "started")
+
+        context.wai.eval("b2f_isp_terminated(\"" + ispID.toBase64() +"\")")
+        context.ispList.remove(this)
+        context.gosetManager.remove_goset(data_goset)
+        context.gosetManager.remove_goset(root_goset)
+        context.gosetManager.remove_goset(ctrl_goset)
+
+        context.feedPub.unsubscribe(client_ctrl_feed)
+        context.tinyRepo.remove_feed(client_ctrl_feed)
+
+        context.tinyRepo.remove_feed(isp_ctrl_feed!!)
+        context.feedPub.unsubscribe(isp_ctrl_feed!!)
+
+        context.tinyRepo.remove_feed(isp_data_feed!!)
+        context.feedPub.unsubscribe(isp_data_feed!!)
+
+        for (feed in client_data_feeds) {
+            context.tinyRepo.remove_feed(feed)
+            context.feedPub.unsubscribe(feed)
+        }
+
+        // c2c feeds are not removed
+
+
+        val f = File(File(context.getDir(Constants.TINYSSB_DIR, Context.MODE_PRIVATE), ISP_DIR), contractID.toHex())
+        f.delete()
+
+
+    }
 
 
     fun delete() {
@@ -441,7 +529,7 @@ class ISP {
 
     constructor(context: MainActivity, isp_id: ByteArray, contractID: ByteArray, client_ctrl_feed: ByteArray, state: String, isp_ctrl_feed: ByteArray?,
                 client_data_feeds: ArrayList<ByteArray>?, isp_data_feed: ByteArray?, isp_prev_data_feed: ByteArray?, goset_epoch: Int, subscriptions: MutableMap<String, ArrayList<ByteArray>>,
-                pendingSubRequests: MutableMap<String, ByteArray>, receivedRequests: MutableMap<String, Pair<ByteArray, ByteArray>>, buffer: MutableMap<String, ByteArray>
+                pendingSubRequests: MutableMap<String, ByteArray>, receivedRequests: MutableMap<String, Pair<ByteArray, ByteArray>>, buffer: MutableMap<String, ByteArray>, farewell_fin_received: Boolean
     ) {
         this.context = context
         this.ispID = isp_id
@@ -452,6 +540,8 @@ class ISP {
         this.client_data_feeds = if (client_data_feeds != null) client_data_feeds else ArrayList<ByteArray>()
         this.isp_data_feed = isp_data_feed
         this.isp_prev_data_feed = isp_prev_data_feed
+
+        this.farewell_fin_received = farewell_fin_received
 
         this.root_goset = context.gosetManager.add_goset(null, GOSET_DMX_STR, 0)
         context.feedPub.subscribe(ispID, { entry -> context.wai.sendTinyEventToFrontend(entry) })
@@ -528,8 +618,9 @@ class ISP {
             for (buf in data[12] as ArrayList<ArrayList<*>>) {
                 buffer[buf[0] as String] = buf[1] as ByteArray
             }
+            val farewell_fin_received = data[13] as Boolean
 
-            return ISP(context, isp_id, contractID, client_ctrl_feed, state, isp_ctrl_feed, client_data_feed, isp_data_feed, isp_prev_data_feed, goset_epoch, subscriptions, pendingSubRequests, receivedRequests, buffer)
+            return ISP(context, isp_id, contractID, client_ctrl_feed, state, isp_ctrl_feed, client_data_feed, isp_data_feed, isp_prev_data_feed, goset_epoch, subscriptions, pendingSubRequests, receivedRequests, buffer, farewell_fin_received)
         }
 
         fun bipf_to_arraylist(buf: Bipf_e?): ArrayList<Any?>? {
@@ -633,6 +724,8 @@ class ISP {
             Bipf.list_append(bufferList, bufferListEntry)
         }
         Bipf.list_append(data, bufferList)
+
+        Bipf.list_append(data, Bipf.mkBool(farewell_fin_received))
 
         return Bipf.encode(data)!!
     }

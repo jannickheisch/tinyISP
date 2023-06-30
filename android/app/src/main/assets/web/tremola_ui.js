@@ -34,7 +34,6 @@ var scenarioMenu = {
         ['Settings', 'menu_settings'],
         ['About', 'menu_about']],
     'isp': [['Request Onboarding', 'menu_new_isp_request'],
-        ['Debug', 'isp_debug'],
         ['Connected Devices', 'menu_connection'],
         // ['<del>Force sync</del>', 'menu_sync'],
         ['Settings', 'menu_settings'],

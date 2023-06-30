@@ -13,7 +13,7 @@ class Tiny_ISP_Protocol:
     # States of a Client-ISP-Contract
 
     # Onboarding
-    TYPE_ANNOUNCEMENT = "announcement" # Announce that this node is an ISP
+    TYPE_ANNOUNCEMENT = "announcement" # Announces that this node is an ISP
     TYPE_ONBOARDING_REQUEST = "onboard_request" # A client initiates an onboarding, already containing a control_feed Client -> ISP
     TYPE_ONBOARDING_RESPONSE = "onboard_response" # The ISP notifies the client if the onboarding was successful, and sends his control feed ISP -> CLient
     TYPE_ONBOARDING_ACK = "onboard_ack" # The node acknowledges a successful onboarding and starts any further communication over the control feeds (indicates that this ctrl_feed is active)
@@ -29,21 +29,16 @@ class Tiny_ISP_Protocol:
     # Subscribing
     TYPE_SUBSCRIPTION_REQUEST = "sub_req" # Request a Subscription. This request is forwarded by the ip to the requested client.
     TYPE_SUBSCRIPTION_ISP_REQUEST = "sub_req_isp" # This is the forwarded message of the ISP
-    TYPE_SUBSCRIPTION_RESPONSE = "sup_resp" # Response to the request. This response if forwaded by the isp to the requesting client.
+    TYPE_SUBSCRIPTION_RESPONSE = "sub_resp" # Response to the request. This response if forwarded by the isp to the requesting client.
     TYPE_SUBSCRIPTION_ISP_RESPONSE = "sub_resp_isp" # This is the forwarded response, or a response of the ISP
 
-    REASON_NOT_FOUND = "not_found"
-    REASON_REJECTED = "rejected"
-
-    TYPE_SUBSCRIPTION_UNSUBSCRIBE = ""
-    TYPE_SUBSCRIPTION_UNSUBSCRIBE_ACK = ""
+    REASON_NOT_FOUND = "not_found" # the request was denied, because the requested client is not a client of this ISP
+    REASON_REJECTED = "rejected" # the request was denied, because the requested client didn't accept the request
 
     # Farewell
-    TYPE_FAREWELL_INITIATE = ""
-    TYPE_FAREWELL_ACK = ""
-    TYPE_FAREWELL_FIN = ""
-    
-    # Misc
+    TYPE_FAREWELL_INITIATE = "farewell_init" # notifies the other side that the contract is going to be terminated, the sending node only replicates the data that is in the data feed, but doesn't append new entries to it
+    TYPE_FAREWELL_ACK = "farewell_ack" # response to farewell_init, confirms the start of the farewell-phase and also stops appending new entries to the data feed
+    TYPE_FAREWELL_FIN = "farewell_fin" # notifies the other side, that the sending node has successfully read all the data and that it is ready to terminate the contract
 
 
     @staticmethod
@@ -73,7 +68,7 @@ class Tiny_ISP_Protocol:
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_DATA_FEEDHOPPING_PREV, [prev])
 
     @staticmethod
-    def data_feed_next(next: bytes) -> bytes:
+    def data_feed_next(next: Optional[bytes]) -> bytes:
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_DATA_FEEDHOPPING_NEXT, [next])
 
     @staticmethod
@@ -103,6 +98,18 @@ class Tiny_ISP_Protocol:
             print("The subscription was not accepted, but no reason is given")
             raise Exception("The subscription was not accepted, but no reason is given")
         return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_SUBSCRIPTION_ISP_RESPONSE, [ref, accepted, c2c_fid if c2c_fid is not None else reason])
+    
+    @staticmethod
+    def farewell_init() -> bytes:
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_FAREWELL_INITIATE)
+    
+    @staticmethod
+    def farewell_ack() -> bytes:
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_FAREWELL_ACK)
+    
+    @staticmethod
+    def farewell_fin() -> bytes:
+        return Tiny_ISP_Protocol._to_bipf(Tiny_ISP_Protocol.TYPE_FAREWELL_FIN)
 
 
     @staticmethod

@@ -400,6 +400,7 @@ class GOset(val context: MainActivity, val add_key_callback: ((ByteArray) -> Uni
             val pkt = context.tinyRepo.feed_read_pkt(fid, seq)
             if (pkt == null || pkt[DMX_LEN].toInt() != Constants.PKTTYPE_chain20) continue;
             val (sz, szlen) = Bipf.varint_decode(pkt, DMX_LEN + 1, DMX_LEN + 4)
+            Log.d("incoming cnk req", "sz: $sz, szlen: $szlen")
             if (sz <= 28 - szlen) continue;
             val maxChunks    = (sz - (28 - szlen) + 99) / 100
             Log.d("node", "maxChunks is ${maxChunks}")

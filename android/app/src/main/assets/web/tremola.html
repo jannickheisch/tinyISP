@@ -62,25 +62,44 @@
   <div id='lst:isp' style="display: none; margin: 5pt;"></div>
 
   <div id="div:isp_menu" class="qr-overlay">
-    <div style="padding-bottom:20px;" onclick="close_isp_context_menu()">
-      <div id="isp_menu_title" style="text-align: center;"></div>
+    <div style="padding-bottom:10px;text-align: center;margin-top:5px;" onclick="close_isp_context_menu()">
+      <b id="isp_menu_title" style="font-size: 20px">ISP Menu</b>
     </div>
 
-    <div id="div:isp_menu_content" class="item_menu_content" onclick="">
-      <div>
-        <b style="margin-top:10px;">Options:</b>
-        <button id='btn:isp_menu_request_sub' class="item_menu_button"  onclick="contextmenu_isp_sub_request()">Subscribe</button>
-        <button id='btn:isp_menu_requests_lst' class="item_menu_button"  onclick="contextmenu_isp_requests_lst()">Subscription requests</button>
+    <div id="div:isp_menu_content" onclick="" style="width:100%; padding-top: 10px; float: left;">
+      <div style="width:31%; float: left;">
+        <b style="margin-top:10px;display: block; margin-bottom: 20px;margin-left: 10%;text-align: center;">Options</b>
+        <button id='btn:isp_menu_request_sub' class="isp_option_button"  onclick="contextmenu_isp_sub_request()">Subscribe</button>
+        <button id='btn:isp_menu_requests_lst' class="isp_option_button"  onclick="contextmenu_isp_requests_lst()">Requests</button>
+        <button id='btn:isp_menu_farewell' class="isp_option_button"  onclick="btn_isp_farewell()" style="color: red;">Farewell</button>
       </div>
 
+      <div style="width:68%; float: right;">
+        <b style="margin-top:10px;display: block; text-align: center; margin-bottom: 20px;">Active Subscriptions</b>
+        <div id="lst:isp_menu_subscriptions">
+          <div style="text-align: center">No active subscriptions</div>
+        </div>
+      </div>
     </div>
 
   </div>
 
-  <div id="isp-sub-overlay" class="qr-overlay" style="display: none; text-align: center;z-index: 10011; width: calc(80% - 30px);">
+  <div id="isp-sub-overlay" class="isp_context_overlay" style="display: none; text-align: center;">
+    <div>
+      <b style="display: block;margin-bottom: 20px;">Send Subscription Request</b>
+      <div style="display:block" id = "isp-sub-content">
+        <div>You don't have any contacts to invite</div>
+      </div>
+    </div>
   </div>
 
-  <div id="isp-requests-overlay" class="qr-overlay" style="display: none; text-align: center;z-index: 10011; width: calc(80% - 30px);">
+  <div id="isp-requests-overlay" class="isp_context_overlay" style="display: none; text-align: center;">
+    <div>
+      <b style="display: block; margin-bottom: 20px;">Received Subscription Requests</b>
+      <div style="display:block" id = "isp-requests-content">
+        <div>There are currently no active subscription requests</div>
+      </div>
+    </div>
   </div>
 
   <div id="new-isp-overlay" class="qr-overlay" style="display: none; text-align: center">

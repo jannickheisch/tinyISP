@@ -244,6 +244,10 @@ class WebAppInterface(val act: MainActivity, val webView: WebView) {
                 }
                 isp.respond_to_request(Base64.decode(args[2], Base64.NO_WRAP), args[3].toBooleanStrict())
             }
+            "isp:farewell" -> {
+                val isp = act.ispList.find { it.ispID.contentEquals(Base64.decode(args[1], Base64.NO_WRAP)) }
+                isp!!.startFarewell()
+            }
             else -> {
                 Log.d("onFrontendRequest", "unknown")
             }

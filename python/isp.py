@@ -114,11 +114,14 @@ class ISP:
             case Tiny_ISP_Protocol.TYPE_ONBOARDING_REQUEST:
                 if args is None or len(args) != 2:
                     return
+                if args[0] != self.node.me: # this request is for another ISP
+                    return
                 self.on_onboarding_request(event.mid, fid, event.mid, args[1])
 
     def on_onboarding_request(self, ref:bytes, fid: bytes,
                               contract_id: bytes, client_ctr_feed: bytes) -> None:
         print("received onboarding request")
+        print("whitelist:", self.whitelist)
         if self.whitelist and fid not in self.whitelist:
             print("Client not in whitelist")
             self.node.publish_public_content(Tiny_ISP_Protocol.onbord_response(ref, False))
@@ -160,10 +163,30 @@ class ISP:
                 go._add_key(fid)
                 go._add_key(self.node.me)
                 go.adjust_state()
-            if inp.lower() == "/test":
-                cl = self.clients[0]
-                lst = ["Test", "TEst", "Test"]
-                cl.publish_over_data(bipf.dumps(lst))
+            if inp.lower().startswith("/farewell"):
+                cmd_split = inp.split(" ")
+                if len(cmd_split) != 2:
+                    print("wrong arguments")
+                    continue
+                if not (cmd_split[1].startswith("@") and cmd_split[1].endswith("=.ed25519")):
+                    print("SSB ids need to have the following format: @...=.ed25519")
+                    continue
+                fid = base64.b64decode(cmd_split[1][1:-8])
+                cl = next((c for c in self.clients if c.client_id == fid), None)
+                if cl is not None:
+                    cl.start_farewell()
+            if inp.lower().startswith("/whitelist"):
+                cmd_split = inp.split(" ")
+                if len(cmd_split) != 2:
+                    print("wrong arguments")
+                    continue
+                if not (cmd_split[1].startswith("@") and cmd_split[1].endswith("=.ed25519")):
+                    print("SSB ids need to have the following format: @...=.ed25519")
+                    continue
+                fid = base64.b64decode(cmd_split[1][1:-8])
+                if fid not in self.whitelist:
+                    print("whitelist append")
+                    self.whitelist.append(fid)
 
             time.sleep(0.2)
 

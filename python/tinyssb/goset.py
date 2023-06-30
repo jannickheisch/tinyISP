@@ -299,7 +299,6 @@ class GOset():
         self.node.arm_dmx(self.goset_dmx, lambda pkt, aux: self.rx(pkt))
 
 
-
     def set_epoch(self, new_epoch: int):
         if new_epoch < self.epoch:
             raise Exception("GOset epoch can't be decreased")

@@ -32,6 +32,10 @@ class FeedPub {
             subscriptions[fid.toHex()]!!.remove(callback)
     }
 
+    fun unsubscribe(fid: ByteArray) {
+        subscriptions.remove(fid.toHex())
+    }
+
     fun on_rx(entry: LogTinyEntry) {
         Log.d("FeedPub", "recieved Tiny Log entry,  ${entry.fid.toHex()}")
         // Log.d("FeedPub", "${ISP.bipf_to_arraylist(Bipf.decode(entry.body))}")

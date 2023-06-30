@@ -9,10 +9,11 @@ import java.security.cert.CertPathValidatorException.BasicReason
 class TinyISPProtocol {
     companion object{
         // Onboarding
-        const val TYPE_ANNOUNCEMENT = "announcement" // Announce that this node is an ISP
+        const val TYPE_ANNOUNCEMENT = "announcement" // Announces that this node is an ISP
         const val TYPE_ONBOARDING_REQUEST = "onboard_request" // A client initiates an onboarding, already containing a control_feed Client -> ISP
         const val TYPE_ONBOARDING_RESPONSE = "onboard_response" // The ISP notifies the client if the onboarding was successful, and sends his control feed ISP -> CLient
         const val TYPE_ONBOARDING_ACK = "onboard_ack" // The node acknowledges a successful onboarding and starts any further communication over the control feeds (indicates that this ctrl_feed is active)
+
 
         // Data feed management
         const val TYPE_DATA_FEEDHOPPING_PREV = "feedhopping_prev"
@@ -21,17 +22,22 @@ class TinyISPProtocol {
 
         const val DATA_FEED_MAX_ENTRIES = 50
 
+
         // Subscribing
         const val TYPE_SUBSCRIPTION_REQUEST = "sub_req" // Request a Subscription. This request is forwarded by the ip to the requested client.
         const val TYPE_SUBSCRIPTION_ISP_REQUEST = "sub_req_isp" // This is the forwarded message of the ISP
-        const val TYPE_SUBSCRIPTION_RESPONSE = "sup_resp" // Response to the request. This response if forwaded by the isp to the requesting client.
+        const val TYPE_SUBSCRIPTION_RESPONSE = "sub_resp" // Response to the request. This response if forwarded by the isp to the requesting client.
         const val TYPE_SUBSCRIPTION_ISP_RESPONSE = "sub_resp_isp" // This is the forwarded response, or a response of the ISP
 
+        const val REASON_NOT_FOUND = "not_found" // the request was denied, because the requested client is not a client of this ISP
+        const val REASON_REJECTED = "rejected" // the request was denied, because the requested client didn't accept the request
+
+
         // Farewell
-        const val TYPE_FAREWELL_INITIATE = ""
-        const val TYPE_FAREWELL_ACK = ""
-        const val TYPE_FAREWELL_FINISHED = ""
-        const val TYPE_FAREWELL_TERMINATED = ""
+        const val TYPE_FAREWELL_INITIATE = "farewell_init" // notifies the other side that the contract is going to be terminated, the sending node only replicates the data that is in the data feed, but doesn't append new entries to it
+        const val TYPE_FAREWELL_ACK = "farewell_ack" // response to farewell_init, confirms the start of the farewell-phase and also stops appending new entries to the data feed
+        const val TYPE_FAREWELL_FIN = "farewell_fin" // notifies the other side, that the sending node has successfully read all the data and that it is ready to terminate the contract
+
 
         fun announce_isp(): ByteArray {
             return _to_bipf(TYPE_ANNOUNCEMENT)
@@ -59,7 +65,7 @@ class TinyISPProtocol {
             return _to_bipf(TYPE_DATA_FEEDHOPPING_PREV, listOf(prev))
         }
 
-        fun data_feed_next(next: ByteArray): ByteArray {
+        fun data_feed_next(next: ByteArray?): ByteArray {
             return _to_bipf(TYPE_DATA_FEEDHOPPING_NEXT, listOf(next))
         }
 
@@ -89,6 +95,18 @@ class TinyISPProtocol {
             return _to_bipf(TYPE_SUBSCRIPTION_ISP_RESPONSE, listOf(ref, accepted, c2c_fid ?: reason))
         }
 
+        fun farewell_init(): ByteArray {
+            return _to_bipf(TYPE_FAREWELL_INITIATE)
+        }
+
+        fun farewell_ack(): ByteArray {
+            return _to_bipf(TYPE_FAREWELL_ACK)
+        }
+
+        fun farewell_fin(): ByteArray {
+            return _to_bipf(TYPE_FAREWELL_FIN)
+        }
+
         private fun _to_bipf(typ: String, args: List<Any?>? = null): ByteArray {
             val lst = Bipf.mkList()
             Bipf.list_append(lst, TINYSSB_APP_ISP)
@@ -112,31 +130,3 @@ class TinyISPProtocol {
 }
 
 }
-    /*
-    msg = []
-    msg.append('ISP')
-    msg.append(typ)
-    if args is not None:
-    msg.extend(args)
-    return bipf.dumps(msg)
-
-    @staticmethod
-    def from_bipf(buf: bytes) -> tuple[Optional[str], Optional[list[Any]]]:
-    payload = []
-    try:
-    payload = bipf.loads(buf)
-    except:
-    return (None , None)
-
-    if payload is None:
-    return (None, None)
-
-    if len(payload) == 1:
-    return (payload[0], None)
-
-    if len(payload) > 1:
-    return (payload[0], payload[1:])
-
-    return (None, None)
-
-    */

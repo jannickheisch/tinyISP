@@ -11,9 +11,9 @@ from . import util
 # from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey, Ed25519PrivateKey
 # from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import dh
+# from cryptography.hazmat.backends import default_backend
+# from cryptography.hazmat.primitives import serialization
+# from cryptography.hazmat.primitives.asymmetric import dh
 
 
 # ----------------------------------------------------------------------
@@ -95,10 +95,10 @@ def mkverifyfct(secret):
         return False
     return vfct
 
-def diffie_hellmann():
-    parameters = dh.generate_parameters(2, 512)
+# def diffie_hellmann():
+#     parameters = dh.generate_parameters(2, 512)
 
-    print(parameters.parameter_numbers().p, parameters.parameter_numbers().g)
+#     print(parameters.parameter_numbers().p, parameters.parameter_numbers().g)
 
 # def ed25519_shared_secret(private_key, public_key):
 #     # Convert the private and public keys to integers

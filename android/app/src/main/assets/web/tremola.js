@@ -289,6 +289,7 @@ function new_text_post(s) {
 }
 
 function new_voice_post(voice_b64) {
+    console.log("new voice post()", curr_chat)
     var draft = unicodeStringToTypedArray(document.getElementById('draft').value); // escapeHTML(
     if (draft.length == 0)
         draft = "null"
@@ -298,7 +299,7 @@ function new_voice_post(voice_b64) {
         // recps = "ALL";
         backend("publ:post [] " + draft + " " + voice_b64); //  + recps)
     } else {
-        recps = tremola.chats[curr_chat].members[0] == myId ? tremola.chats[curr_chat].members[1].slice(1,-8) : tremola.chats[curr_chat].members[0].slice(1,-8);
+        var recps = tremola.chats[curr_chat].members[0] == myId ? tremola.chats[curr_chat].members[1].slice(1,-8) : tremola.chats[curr_chat].members[0].slice(1,-8);
         console.log("priv recp: " + recps)
         backend("priv:post [] " + draft + " " + voice_b64 + " " + recps);
     }
@@ -978,17 +979,18 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
     console.log("New Frontend Event: " + JSON.stringify(e.header))
 
     //add
-    if (!(e.header.fid in tremola.contacts)) {
-        var a = id2b32(e.header.fid);
-        tremola.contacts[e.header.fid] = {
-            "alias": a, "initial": a.substring(0, 1).toUpperCase(),
-            "color": colors[Math.floor(colors.length * Math.random())]
-        }
-        load_contact_list()
-    }
+
 
     if (e.public) {
         if (e.public[0] == 'TAV') { // text and voice
+            if (!(e.header.fid in tremola.contacts)) {
+                var a = id2b32(e.header.fid);
+                tremola.contacts[e.header.fid] = {
+                    "alias": a, "initial": a.substring(0, 1).toUpperCase(),
+                    "color": colors[Math.floor(colors.length * Math.random())]
+                }
+                load_contact_list()
+            }
             console.log("new post 0 ", tremola)
             var conv_name = "ALL";
             if (!(conv_name in tremola.chats)) { // create new conversation if needed
@@ -1055,14 +1057,13 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
                             tremola.isp.established[e.header.fid] = {
                                 "subscriptions": [],
                                 "pendingSub": [],
-                                "requests": {}
+                                "requests": {},
+                                "farewell": false
                             }
                         }
                         load_isp_list()
                     }
                     break
-
-
                 /*
                 case ISP_TYPE_ANNOUNCEMENT:
                     console.log("received isp announcement")
@@ -1076,6 +1077,14 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
                 */
             }
         } else if (e.public[0] == "PTV") {
+            if (!(e.header.fid in tremola.contacts)) {
+                var a = id2b32(e.header.fid);
+                tremola.contacts[e.header.fid] = {
+                    "alias": a, "initial": a.substring(0, 1).toUpperCase(),
+                    "color": colors[Math.floor(colors.length * Math.random())]
+                }
+                load_contact_list()
+            }
             var txt = e.public[1]
             var voice = e.public[2]
             var tst = e.public[3]
@@ -1099,7 +1108,7 @@ function b2f_new_event(e) { // incoming SSB log event: we get map with three ent
                 var a = e.public;
                 var p = {
                     "key": e.header.ref, "from": e.header.fid, "body": txt,
-                    "voice": voice, "when": tst
+                    "voice": voice, "when": tst * 1000
                 };
                 console.log("new post 2 ", p)
                 console.log("time: ", a[3])

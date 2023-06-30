@@ -618,3 +618,30 @@ input:checked + .slider:before {
   grid-area: text;
 }
 
+/* --------------------------------------------------------------------------- */
+/*                                ISP                                          */
+/* --------------------------------------------------------------------------- */
+
+.isp_option_button {
+  width: 90%;
+  float: right;
+  margin:5px auto;
+  display:block;
+  height: 30px;
+}
+
+.isp_context_overlay {
+  display: none;
+  background: #fff;
+  padding: 0.5em;
+  width: calc(70% - 16px);
+  position: fixed;
+  top: 13%;
+  left: 15%;
+  cursor: default;
+  z-index: 10011;
+  border-radius: 4px;
+  box-shadow: 0 0 25px rgba(0,0,0,0.9);
+  overflow-wrap: break-word;
+}
+

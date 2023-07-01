@@ -348,7 +348,7 @@ class Repo:
         print("sidechain_append()")
         b = self.node.blbt[chunk_indx]
 
-        print("append", b.fid.hex(), b.seq, chunk_indx)
+        print("append", b.fid.hex(), b.seq, chunk_indx, b.bnr)
 
         with self._open_file(b.fid, "ab", b.seq, 1) as f:
             f.write(buf)

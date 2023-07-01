@@ -225,8 +225,6 @@ class NODE:  # a node in the tinySSB forwarding fabric
                     continue
                 fid = k
                 frec = self.repo.fid2rec(fid, True, repo.FEED_TYPE_ROOT if go.is_root_goset else repo.FEED_TYPE_ISP_VIRTUAL)
-                if frec is None:
-                    continue
                 frec.next_seq = self.repo.feed_len(fid) + 1
                 for fn in os.listdir(f):
                     path = os.path.join(f, fn)
@@ -247,7 +245,8 @@ class NODE:  # a node in the tinySSB forwarding fabric
                         print("path:", path)
                         with open(path, "rb") as g:
                             g.seek(-util.HASH_LEN, 2) # seek from end of file
-                            if len(g.read(len(h))) != len(h):
+                            h = g.read(HASH_LEN)
+                            if len(h) != HASH_LEN:
                                 print("read missmatch")
                                 seq -= 1
                             else:
